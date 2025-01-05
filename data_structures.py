@@ -6,13 +6,23 @@ class SmallCube:
     Represents one small sub-cube in the Rubik's cube.
     Stores index, position, orientation, and a 4x4 model matrix.
     """
-    def __init__(self, index, position=glm.vec3(0), rotation=glm.vec3(0)):
+    def __init__(self, index, grid_coords, size=3):
         self.index = index
-        self.position = glm.vec3(position)
-        # Euler angles for orientation (in degrees)
-        self.rotation = glm.vec3(rotation)
+        self.grid_coords = grid_coords  # store (x,y,z) as integers
+        self.size = size
+        self.rotation = glm.vec3(0)
         self.model_matrix = glm.mat4(1.0)
+        self._update_position_from_coords()
+
+    
+    def _update_position_from_coords(self):
+        offset = (self.size - 1)/2.0
+        # Convert integer coords to float position
+        gx, gy, gz = self.grid_coords
+        self.position = glm.vec3(gx - offset, gy - offset, gz - offset)
+
         self.update_model_matrix()
+
 
     def update_model_matrix(self):
         """
@@ -59,10 +69,6 @@ class RubiksData:
         for x in range(self.size):
             for y in range(self.size):
                 for z in range(self.size):
-                    # Optionally skip the very center if size=3:
-                    # if self.size == 3 and x == 1 and y == 1 and z == 1:
-                    #    continue
-                    pos = glm.vec3(x - offset, y - offset, z - offset)
-                    cube = SmallCube(index, position=pos)
-                    self.sub_cubes.append(cube)
+                    new_cube = SmallCube(index, (x,y,z), size=self.size)
+                    self.sub_cubes.append(new_cube)
                     index += 1

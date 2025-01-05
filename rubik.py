@@ -222,93 +222,177 @@ class RubiksCubeRenderer:
         print(f"Starting rotation for face={face}, clockwise={clockwise} by {self.rotation_angle} deg.")
 
     def _get_subcubes_for_face(self, face):
-        """
-        Return the list of sub-cubes belonging to the requested face.
-        For example, 'R' -> all sub-cubes with x = +offset.
-        'L' -> x = -offset, 'U' -> y=+offset, 'D'->y=-offset, etc.
-        For a NxN, offset is (N-1)/2.
-        """
-        eps = 0.001
-        offset = (self.data.size - 1)/2.0
-        selected = []
-        for scube in self.data.sub_cubes:
-            x,y,z = scube.position.x, scube.position.y, scube.position.z
-            if face == 'R':  # right => x ~ +offset
-                if abs(x - offset) < eps:
-                    selected.append(scube)
-            elif face == 'L': # left => x ~ -offset
-                if abs(x + offset) < eps:
-                    selected.append(scube)
-            elif face == 'U': # up => y ~ +offset
-                if abs(y - offset) < eps:
-                    selected.append(scube)
-            elif face == 'D': # down => y ~ -offset
-                if abs(y + offset) < eps:
-                    selected.append(scube)
-            elif face == 'F': # front => z ~ +offset
-                if abs(z - offset) < eps:
-                    selected.append(scube)
-            elif face == 'B': # back => z ~ -offset
-                if abs(z + offset) < eps:
-                    selected.append(scube)
-        return selected
+        offset = self.data.size - 1
+        if face == 'R':
+            return [scube for scube in self.data.sub_cubes if scube.grid_coords[0] == offset]
+        elif face == 'L':
+            return [scube for scube in self.data.sub_cubes if scube.grid_coords[0] == 0]
+        elif face == 'U':
+            return [scube for scube in self.data.sub_cubes if scube.grid_coords[1] == offset]
+        elif face == 'D':
+            return [scube for scube in self.data.sub_cubes if scube.grid_coords[1] == 0]
+        elif face == 'F':
+            return [scube for scube in self.data.sub_cubes if scube.grid_coords[2] == offset]
+        elif face == 'B':
+            return [scube for scube in self.data.sub_cubes if scube.grid_coords[2] == 0]
+        else:
+            raise ValueError(f"Unknown face: {face}")
 
     def _update_animation(self):
-        """
-        If currently animating, rotate the appropriate sub-cubes incrementally 
-        until done, then finalize positions/orientations.
-        """
         if not self.is_animating:
             return
 
-        dt = 1.0/60.0  # assume ~60 fps or measure real time
+        dt = 1.0/60.0
         step = self.animation_speed * dt
-        if self.current_angle + step >= self.target_angle:
-            step = self.target_angle - self.current_angle
-            self.is_animating = False
-
+        
+        # Update current angle and check completion
         self.current_angle += step
+        if self.current_angle >= self.target_angle:
+            self.current_angle = self.target_angle
+            self.is_animating = False
+            step = self.target_angle - (self.current_angle - step)  # Get exact remaining step
 
-        # Rotate each sub-cube around the face's rotation axis
+        # Rotate cubes around axis
         angle_deg = step if self.clockwise else -step
         axis, pivot = self._get_face_axis_and_pivot(self.current_face)
-
         rot_mat = glm.rotate(glm.mat4(1.0), glm.radians(angle_deg), axis)
 
         for scube in self.rotating_cubes:
-            # Move pivot to origin
-            scube.position -= pivot
-            # Rotate
-            scube.position = glm.vec3(rot_mat * glm.vec4(scube.position, 1.0))
-            # Also rotate orientation (Euler angles can be tricky, but let's do a matrix-based approach):
-            # Build a matrix from scube's rotation, multiply, then re-extract Euler angles, or keep storing matrix.
-            # For simplicity: store the orientation as a matrix entirely. 
-            # But let's proceed with the existing Euler approach in a naive way. 
-            # Instead, we'll just do the orientation as a matrix:
-            orientation_mat = self._build_orientation_matrix(scube.rotation)
-            orientation_mat = rot_mat * orientation_mat
-            # Re-extract Euler
-            new_euler = self._extract_euler_angles(orientation_mat)
-            scube.rotation = new_euler
+            # Move to origin, rotate, move back
+            pos = scube.position - pivot
+            pos = glm.vec3(rot_mat * glm.vec4(pos, 1.0))
+            scube.position = pos + pivot
 
-            # Move back
-            scube.position += pivot
+            # Update rotation
+            scube.rotation += angle_deg * axis
             scube.update_model_matrix()
 
+        # When animation completes, update cube positions
         if not self.is_animating:
-            # Final step: re-snap sub-cubes to exact multiples of 90 degrees, 
-            # to avoid floating precision issues. 
-            # Also recalc their positions if needed.
-            for scube in self.rotating_cubes:
-                # Snap scube.rotation.x/y/z to nearest multiple of 90
-                scube.rotation = glm.vec3([self._snap_to_90(a) for a in scube.rotation])
-                # Snap scube.position.x/y/z to nearest .5 increments if you want perfect alignment
-                scube.position.x = round(scube.position.x * 2.0) / 2.0
-                scube.position.y = round(scube.position.y * 2.0) / 2.0
-                scube.position.z = round(scube.position.z * 2.0) / 2.0
-                scube.update_model_matrix()
-            self.rotating_cubes.clear()
-            print("Rotation animation done.")
+            self._snap_cubes_to_grid()
+            self._update_face_colors()
+
+    def _get_cube_colors(self, cube):
+        """Get current colors of cube faces"""
+        colors = []
+        vertices_per_face = 4
+        floats_per_vertex = 8  # x,y,z, r,g,b, u,v
+        
+        for face in range(6):
+            face_colors = []
+            for vertex in range(vertices_per_face):
+                vertex_start = (cube.index * 24 + face * 4 + vertex) * floats_per_vertex
+                color = self.vertices[vertex_start+3:vertex_start+6]  # r,g,b components
+                face_colors.append(color)
+            colors.append(face_colors)
+        return colors
+
+    def _set_cube_colors(self, cube, colors):
+        """Set new colors for cube faces"""
+        vertices_per_face = 4
+        floats_per_vertex = 8
+        
+        for face in range(6):
+            for vertex in range(vertices_per_face):
+                vertex_start = (cube.index * 24 + face * 4 + vertex) * floats_per_vertex
+                self.vertices[vertex_start+3:vertex_start+6] = colors[face][vertex]
+        
+        # Update entire VBO
+        glBindBuffer(GL_ARRAY_BUFFER, self.VBO)
+        glBufferData(GL_ARRAY_BUFFER, self.vertices.nbytes, self.vertices, GL_STATIC_DRAW)
+
+    def _update_face_colors(self):
+        """Update colors after rotation"""
+        face = self.current_face
+        clockwise = self.clockwise
+        
+        # Store colors before rotation
+        original_colors = []
+        for cube in self.rotating_cubes:
+            original_colors.append(self._get_cube_colors(cube))
+        
+        # Calculate new positions
+        n = int(len(self.rotating_cubes) ** 0.5)
+        new_indices = self._get_rotated_indices(n, clockwise)
+        
+        # Apply rotated colors
+        for i in range(len(self.rotating_cubes)):
+            if i < len(new_indices):
+                new_idx = new_indices[i]
+                if new_idx < len(original_colors):
+                    self._set_cube_colors(self.rotating_cubes[i], original_colors[new_idx])
+        
+    def _get_rotated_indices(self, n, clockwise):
+        """Get new indices order after rotation"""
+        indices = list(range(n*n))
+        if clockwise:
+            return [n*j + i for i in range(n) for j in range(n-1, -1, -1)]
+        else:
+            return [n*(n-1-j) + i for i in range(n-1, -1, -1) for j in range(n)]
+    
+    def _snap_cubes_to_grid(self):
+        """After the animation, update each rotating cube’s grid-coords and recalc position."""
+        size = self.data.size
+        offset = size - 1
+
+        for scube in self.rotating_cubes:
+            x, y, z = scube.grid_coords
+
+            if self.current_face == 'R':
+                if self.clockwise:
+                    new_y = z
+                    new_z = offset - y
+                else:
+                    new_y = offset - z
+                    new_z = y
+                scube.grid_coords = (x, new_y, new_z)
+
+            elif self.current_face == 'L':
+                if self.clockwise:
+                    new_y = offset - z
+                    new_z = y
+                else:
+                    new_y = z
+                    new_z = offset - y
+                scube.grid_coords = (x, new_y, new_z)
+
+            elif self.current_face == 'U':
+                if self.clockwise:
+                    new_x = offset - z
+                    new_z = x
+                else:
+                    new_x = z
+                    new_z = offset - x
+                scube.grid_coords = (new_x, y, new_z)
+
+            elif self.current_face == 'D':
+                if self.clockwise:
+                    new_x = z
+                    new_z = offset - x
+                else:
+                    new_x = offset - z
+                    new_z = x
+                scube.grid_coords = (new_x, y, new_z)
+
+            elif self.current_face == 'F':
+                if self.clockwise:
+                    new_x = y
+                    new_y = offset - x
+                else:
+                    new_x = offset - y
+                    new_y = x
+                scube.grid_coords = (new_x, new_y, z)
+
+            elif self.current_face == 'B':
+                if self.clockwise:
+                    new_x = offset - y
+                    new_y = x
+                else:
+                    new_x = y
+                    new_y = offset - x
+                scube.grid_coords = (new_x, new_y, z)
+
+            scube._update_position_from_coords()
 
     def _snap_to_90(self, angle):
         # Snap angle in degrees to nearest multiple of 90
