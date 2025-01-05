@@ -45,7 +45,7 @@ class ColorPickingManager:
             x, flipped_y, 1, 1, GL_DEPTH_COMPONENT, GL_FLOAT
         )
         if pixel_color is not None and pixel_depth is not None:
-            color = tuple(pixel_color[0])
+            color = tuple(pixel_color)
             depth = pixel_depth[0][0]
             # Convert color -> index
             i = self.color_to_index(color)

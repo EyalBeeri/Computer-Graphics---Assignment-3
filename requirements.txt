@@ -1,6 +1,7 @@
+# Python <= 3.10 needed
 PyOpenGL
 PyOpenGL_accelerate
 glfw
-numpy
+numpy==1.24.3
 Pillow
 PyGLM
