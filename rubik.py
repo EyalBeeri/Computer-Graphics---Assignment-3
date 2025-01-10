@@ -277,58 +277,73 @@ class RubiksCubeRenderer:
         colors = []
         vertices_per_face = 4
         floats_per_vertex = 8  # x,y,z, r,g,b, u,v
-        
+
+        start_idx = 0  # Don't use cube.index as it might be incorrect
         for face in range(6):
             face_colors = []
             for vertex in range(vertices_per_face):
-                vertex_start = (cube.index * 24 + face * 4 + vertex) * floats_per_vertex
-                color = self.vertices[vertex_start+3:vertex_start+6]  # r,g,b components
+                vertex_start = (start_idx + face * 4 + vertex) * floats_per_vertex
+                color = self.vertices[vertex_start + 3:vertex_start + 6].copy()  # Make a copy of the color
                 face_colors.append(color)
             colors.append(face_colors)
         return colors
 
     def _set_cube_colors(self, cube, colors):
         """Set new colors for cube faces"""
+        if not colors or not all(face_colors for face_colors in colors):
+            print("Warning: Invalid colors array")
+            return
+
         vertices_per_face = 4
         floats_per_vertex = 8
-        
+
+        start_idx = 0  # Don't use cube.index
         for face in range(6):
             for vertex in range(vertices_per_face):
-                vertex_start = (cube.index * 24 + face * 4 + vertex) * floats_per_vertex
-                self.vertices[vertex_start+3:vertex_start+6] = colors[face][vertex]
-        
-        # Update entire VBO
+                vertex_start = (start_idx + face * 4 + vertex) * floats_per_vertex
+                if vertex_start + 6 <= len(self.vertices):  # Bounds check
+                    self.vertices[vertex_start + 3:vertex_start + 6] = colors[face][vertex]
+
+        # Update VBO
         glBindBuffer(GL_ARRAY_BUFFER, self.VBO)
         glBufferData(GL_ARRAY_BUFFER, self.vertices.nbytes, self.vertices, GL_STATIC_DRAW)
 
     def _update_face_colors(self):
         """Update colors after rotation"""
-        face = self.current_face
-        clockwise = self.clockwise
-        
         # Store colors before rotation
         original_colors = []
         for cube in self.rotating_cubes:
-            original_colors.append(self._get_cube_colors(cube))
-        
+            colors = self._get_cube_colors(cube)
+            original_colors.append(colors)
+
         # Calculate new positions
-        n = int(len(self.rotating_cubes) ** 0.5)
-        new_indices = self._get_rotated_indices(n, clockwise)
-        
+        n = int(len(self.rotating_cubes) ** 0.5)  # Should be 3 for a 3x3 cube
+        new_indices = self._get_rotated_indices(n, self.clockwise)
+
+        # Safety check
+        if len(new_indices) != len(self.rotating_cubes):
+            print(
+                f"Warning: indices mismatch. new_indices={len(new_indices)}, rotating_cubes={len(self.rotating_cubes)}")
+            return
+
         # Apply rotated colors
-        for i in range(len(self.rotating_cubes)):
-            if i < len(new_indices):
-                new_idx = new_indices[i]
-                if new_idx < len(original_colors):
-                    self._set_cube_colors(self.rotating_cubes[i], original_colors[new_idx])
-        
+        for i, cube in enumerate(self.rotating_cubes):
+            new_idx = new_indices[i]
+            if 0 <= new_idx < len(original_colors):  # Bounds check
+                try:
+                    self._set_cube_colors(cube, original_colors[new_idx])
+                except Exception as e:
+                    print(f"Error setting colors for cube {i} with new_idx {new_idx}: {e}")
+
     def _get_rotated_indices(self, n, clockwise):
         """Get new indices order after rotation"""
-        indices = list(range(n*n))
+        indices = list(range(n * n))
         if clockwise:
-            return [n*j + i for i in range(n) for j in range(n-1, -1, -1)]
+            # For clockwise rotation on left face
+            return [n * j + i for i in range(n - 1, -1, -1) for j in range(n)]
         else:
-            return [n*(n-1-j) + i for i in range(n-1, -1, -1) for j in range(n)]
+            # For counter-clockwise rotation on left face
+            return [n * j + i for i in range(n) for j in range(n - 1, -1, -1)]
     
     def _snap_cubes_to_grid(self):
         """After the animation, update each rotating cube’s grid-coords and recalc position."""
