@@ -275,9 +275,6 @@ class RubiksCubeRenderer:
         dt = 1.0 / 60.0
         step = self.animation_speed * dt
 
-        # Store previous angle before update
-        prev_angle = self.current_angle
-
         # Update current angle and check completion
         self.current_angle += step
         if self.current_angle >= self.target_angle:
@@ -285,21 +282,8 @@ class RubiksCubeRenderer:
             self.is_animating = False
             step = self.target_angle - (self.current_angle - step)  # Get exact remaining step
 
-        # Check if we crossed a 90-degree boundary
-        prev_quarter_turns = int(prev_angle / 90)
-        current_quarter_turns = int(self.current_angle / 90)
-        crossed_90_degrees = current_quarter_turns > prev_quarter_turns
-
-        # If we crossed a 90-degree boundary, update cube state
-        if crossed_90_degrees:
-            self._snap_cubes_to_grid()
-            self._update_face_colors()
-
-        # Handle half-turn state
-        if not self.is_animating:  # Animation complete
-            final_angle = self.current_angle % 360  # Normalize to 0-360
-            is_half_turn = final_angle % 90 != 0
-
+            # Check if this will result in a half-turned face
+            is_half_turn = self.target_angle % 90 != 0
             if is_half_turn:
                 if self.current_face in self.half_turned_faces:
                     self.half_turned_faces.remove(self.current_face)
@@ -310,14 +294,9 @@ class RubiksCubeRenderer:
                 else:
                     self.half_turned_faces.append(self.current_face)
                     self.is_face_half_turned = True
-            else:
-                # At a 90-degree position
-                if self.current_face in self.half_turned_faces:
-                    self.half_turned_faces.remove(self.current_face)
-                    if len(self.half_turned_faces) == 0:
-                        self.is_face_half_turned = False
 
-        # Perform the actual rotation
+
+        # Rotate cubes around axis
         angle_deg = step if self.clockwise else -step
         axis, pivot = self._get_face_axis_and_pivot(self.current_face)
         rot_mat = glm.rotate(glm.mat4(1.0), glm.radians(angle_deg), axis)
@@ -331,6 +310,11 @@ class RubiksCubeRenderer:
             # Update rotation
             scube.rotation += angle_deg * axis
             scube.update_model_matrix()
+
+        # When animation completes, update cube positions
+        if not self.is_animating:
+            self._snap_cubes_to_grid()
+            self._update_face_colors()
 
     def _get_cube_colors(self, cube):
         """Get current colors of cube faces"""
