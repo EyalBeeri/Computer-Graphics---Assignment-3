@@ -3,18 +3,20 @@ from OpenGL.GL import *
 import numpy as np
 import time
 
+
 class RubiksCubeRenderer:
     """
     Manages rendering of the NxNxN Rubik's cube (using a single geometry for each sub-cube),
     plus logic for rotating faces on keypress, toggling clockwise/counterclockwise, etc.
     Also includes an animation system for rotating a face over time.
     """
+
     def __init__(self, rubiks_data, shader_program, texture_id, solver):
-        self.data = rubiks_data   # RubiksData holding sub-cubes
+        self.data = rubiks_data  # RubiksData holding sub-cubes
         self.shader_program = shader_program
         self.texture_id = texture_id
 
-        self.solver = solver      # RubikSolver instance
+        self.solver = solver  # RubikSolver instance
 
         # Create geometry for a single cube
         self.VAO = None
@@ -27,6 +29,8 @@ class RubiksCubeRenderer:
         # Rotation control
         self.clockwise = True
         self.rotation_angle = 90.0  # can range from 45..180
+        self.half_turned_faces = []  # Will store face name if any face is half-turned
+        self.is_face_half_turned = False  # True if any face is not at a 90-degree position
 
         # For face-rotation animation
         self.is_animating = False
@@ -44,49 +48,49 @@ class RubiksCubeRenderer:
         self.vertices = np.array([
             #   x,    y,    z,   r,   g,   b,  u,  v
             # Front face (Red)
-            -0.5, -0.5,  0.5,  1,0,0,  0,0,
-            0.5, -0.5,  0.5,  1,0,0,  1,0,
-            0.5,  0.5,  0.5,  1,0,0,  1,1,
-            -0.5,  0.5,  0.5,  1,0,0,  0,1,
+            -0.5, -0.5, 0.5, 1, 0, 0, 0, 0,
+            0.5, -0.5, 0.5, 1, 0, 0, 1, 0,
+            0.5, 0.5, 0.5, 1, 0, 0, 1, 1,
+            -0.5, 0.5, 0.5, 1, 0, 0, 0, 1,
 
             # Back face (Orange)
-            -0.5, -0.5, -0.5,  1,0.5,0,  1,0,
-            0.5, -0.5, -0.5,  1,0.5,0,  0,0,
-            0.5,  0.5, -0.5,  1,0.5,0,  0,1,
-            -0.5,  0.5, -0.5,  1,0.5,0,  1,1,
+            -0.5, -0.5, -0.5, 1, 0.5, 0, 1, 0,
+            0.5, -0.5, -0.5, 1, 0.5, 0, 0, 0,
+            0.5, 0.5, -0.5, 1, 0.5, 0, 0, 1,
+            -0.5, 0.5, -0.5, 1, 0.5, 0, 1, 1,
 
             # Left face (Green)
-            -0.5, -0.5, -0.5,  0,1,0,  0,0,
-            -0.5, -0.5,  0.5,  0,1,0,  1,0,
-            -0.5,  0.5,  0.5,  0,1,0,  1,1,
-            -0.5,  0.5, -0.5,  0,1,0,  0,1,
+            -0.5, -0.5, -0.5, 0, 1, 0, 0, 0,
+            -0.5, -0.5, 0.5, 0, 1, 0, 1, 0,
+            -0.5, 0.5, 0.5, 0, 1, 0, 1, 1,
+            -0.5, 0.5, -0.5, 0, 1, 0, 0, 1,
 
             # Right face (Blue)
-            0.5, -0.5, -0.5,  0,0,1,  0,0,
-            0.5, -0.5,  0.5,  0,0,1,  1,0,
-            0.5,  0.5,  0.5,  0,0,1,  1,1,
-            0.5,  0.5, -0.5,  0,0,1,  0,1,
+            0.5, -0.5, -0.5, 0, 0, 1, 0, 0,
+            0.5, -0.5, 0.5, 0, 0, 1, 1, 0,
+            0.5, 0.5, 0.5, 0, 0, 1, 1, 1,
+            0.5, 0.5, -0.5, 0, 0, 1, 0, 1,
 
             # Top face (White)
-            -0.5,  0.5,  0.5,  1,1,1,  0,0,
-            0.5,  0.5,  0.5,  1,1,1,  1,0,
-            0.5,  0.5, -0.5,  1,1,1,  1,1,
-            -0.5,  0.5, -0.5,  1,1,1,  0,1,
+            -0.5, 0.5, 0.5, 1, 1, 1, 0, 0,
+            0.5, 0.5, 0.5, 1, 1, 1, 1, 0,
+            0.5, 0.5, -0.5, 1, 1, 1, 1, 1,
+            -0.5, 0.5, -0.5, 1, 1, 1, 0, 1,
 
             # Bottom face (Yellow)
-            -0.5, -0.5,  0.5,  1,1,0,  0,0,
-            0.5, -0.5,  0.5,  1,1,0,  1,0,
-            0.5, -0.5, -0.5,  1,1,0,  1,1,
-            -0.5, -0.5, -0.5,  1,1,0,  0,1,
+            -0.5, -0.5, 0.5, 1, 1, 0, 0, 0,
+            0.5, -0.5, 0.5, 1, 1, 0, 1, 0,
+            0.5, -0.5, -0.5, 1, 1, 0, 1, 1,
+            -0.5, -0.5, -0.5, 1, 1, 0, 0, 1,
         ], dtype=np.float32)
 
         self.indices = np.array([
-            0,1,2,  2,3,0,      # Front
-            4,5,6,  6,7,4,      # Back
-            8,9,10, 10,11,8,    # Left
-            12,13,14,14,15,12,  # Right
-            16,17,18,18,19,16,  # Top
-            20,21,22,22,23,20,  # Bottom
+            0, 1, 2, 2, 3, 0,  # Front
+            4, 5, 6, 6, 7, 4,  # Back
+            8, 9, 10, 10, 11, 8,  # Left
+            12, 13, 14, 14, 15, 12,  # Right
+            16, 17, 18, 18, 19, 16,  # Top
+            20, 21, 22, 22, 23, 20,  # Bottom
         ], dtype=np.uint32)
 
         self.VAO = glGenVertexArrays(1)
@@ -101,15 +105,15 @@ class RubiksCubeRenderer:
         glBufferData(GL_ELEMENT_ARRAY_BUFFER, self.indices.nbytes, self.indices, GL_STATIC_DRAW)
 
         # Position attribute
-        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 8*self.vertices.itemsize, None)
+        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 8 * self.vertices.itemsize, None)
         glEnableVertexAttribArray(0)
         # Color attribute
-        glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 8*self.vertices.itemsize, 
-                              ctypes.c_void_p(3*self.vertices.itemsize))
+        glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 8 * self.vertices.itemsize,
+                              ctypes.c_void_p(3 * self.vertices.itemsize))
         glEnableVertexAttribArray(1)
         # TexCoord attribute
-        glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, 8*self.vertices.itemsize,
-                              ctypes.c_void_p(6*self.vertices.itemsize))
+        glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, 8 * self.vertices.itemsize,
+                              ctypes.c_void_p(6 * self.vertices.itemsize))
         glEnableVertexAttribArray(2)
 
         glBindVertexArray(0)
@@ -202,21 +206,47 @@ class RubiksCubeRenderer:
         glUseProgram(0)
 
     ### Face Rotation Logic ###
+    def can_rotate_face(self, new_face):
+        """
+        Check if it's valid to rotate the requested face given current cube state.
+        Takes into account half-turned faces.
+        """
+        # If no face is half-turned, all rotations are allowed
+        if not self.is_face_half_turned:
+            return True
+
+        if new_face == 'R' and 'L' not in self.half_turned_faces and 'R' not in self.half_turned_faces:
+            return False
+        elif new_face == 'L' and 'R' not in self.half_turned_faces and 'L' not in self.half_turned_faces:
+            return False
+        elif new_face == 'U' and 'D' not in self.half_turned_faces and 'U' not in self.half_turned_faces:
+            return False
+        elif new_face == 'D' and 'U' not in self.half_turned_faces and 'D' not in self.half_turned_faces:
+            return False
+        elif new_face == 'F' and 'B' not in self.half_turned_faces and 'F' not in self.half_turned_faces:
+            return False
+        elif new_face == 'B' and 'F' not in self.half_turned_faces and 'B' not in self.half_turned_faces:
+            return False
+        else:
+            return True
+
     def rotate_face(self, face, clockwise):
         """
         Called upon a key press (R, L, U, D, F, B).
-        Instead of instantly rotating, we set up an animation to rotate 90 degrees 
-        (or 'rotation_angle' degrees if not 90).
+        Checks if rotation is allowed before starting animation.
         """
         if self.is_animating:
             print("Already animating a face. Wait until done.")
+            return
+
+        if not self.can_rotate_face(face):
+            print(f"Cannot rotate face {face} while face is in {self.half_turned_faces} and half-turned")
             return
 
         self.current_face = face
         self.clockwise = clockwise
         self.target_angle = self.rotation_angle
         self.current_angle = 0.0
-        # Identify which sub-cubes need rotating
         self.rotating_cubes = self._get_subcubes_for_face(face)
         self.is_animating = True
         print(f"Starting rotation for face={face}, clockwise={clockwise} by {self.rotation_angle} deg.")
@@ -242,15 +272,29 @@ class RubiksCubeRenderer:
         if not self.is_animating:
             return
 
-        dt = 1.0/60.0
+        dt = 1.0 / 60.0
         step = self.animation_speed * dt
-        
+
         # Update current angle and check completion
         self.current_angle += step
         if self.current_angle >= self.target_angle:
             self.current_angle = self.target_angle
             self.is_animating = False
             step = self.target_angle - (self.current_angle - step)  # Get exact remaining step
+
+            # Check if this will result in a half-turned face
+            is_half_turn = self.target_angle % 90 != 0
+            if is_half_turn:
+                if self.current_face in self.half_turned_faces:
+                    self.half_turned_faces.remove(self.current_face)
+                    if len(self.half_turned_faces) == 0:
+                        self.is_face_half_turned = False
+                    else:
+                        self.is_face_half_turned = True
+                else:
+                    self.half_turned_faces.append(self.current_face)
+                    self.is_face_half_turned = True
+
 
         # Rotate cubes around axis
         angle_deg = step if self.clockwise else -step
@@ -344,7 +388,7 @@ class RubiksCubeRenderer:
         else:
             # For counter-clockwise rotation on left face
             return [n * j + i for i in range(n) for j in range(n - 1, -1, -1)]
-    
+
     def _snap_cubes_to_grid(self):
         """After the animation, update each rotating cube’s grid-coords and recalc position."""
         size = self.data.size
@@ -420,26 +464,26 @@ class RubiksCubeRenderer:
         pivot is the center about which the rotation occurs.
         For e.g. R face, pivot is (offset,0,0).
         """
-        offset = (self.data.size - 1)/2.0
+        offset = (self.data.size - 1) / 2.0
         if face == 'R':
-            return (glm.vec3(1,0,0), glm.vec3(offset, 0, 0))
+            return (glm.vec3(1, 0, 0), glm.vec3(offset, 0, 0))
         elif face == 'L':
-            return (glm.vec3(-1,0,0), glm.vec3(-offset, 0, 0))
+            return (glm.vec3(-1, 0, 0), glm.vec3(-offset, 0, 0))
         elif face == 'U':
-            return (glm.vec3(0,1,0), glm.vec3(0, offset, 0))
+            return (glm.vec3(0, 1, 0), glm.vec3(0, offset, 0))
         elif face == 'D':
-            return (glm.vec3(0,-1,0), glm.vec3(0, -offset, 0))
+            return (glm.vec3(0, -1, 0), glm.vec3(0, -offset, 0))
         elif face == 'F':
-            return (glm.vec3(0,0,1), glm.vec3(0, 0, offset))
+            return (glm.vec3(0, 0, 1), glm.vec3(0, 0, offset))
         elif face == 'B':
-            return (glm.vec3(0,0,-1), glm.vec3(0, 0, -offset))
-        return (glm.vec3(0,0,0), glm.vec3(0,0,0))
+            return (glm.vec3(0, 0, -1), glm.vec3(0, 0, -offset))
+        return (glm.vec3(0, 0, 0), glm.vec3(0, 0, 0))
 
     def _build_orientation_matrix(self, euler):
         # Convert Euler angles (degrees) to a rotation matrix
-        rx = glm.rotate(glm.mat4(1.0), glm.radians(euler.x), glm.vec3(1,0,0))
-        ry = glm.rotate(glm.mat4(1.0), glm.radians(euler.y), glm.vec3(0,1,0))
-        rz = glm.rotate(glm.mat4(1.0), glm.radians(euler.z), glm.vec3(0,0,1))
+        rx = glm.rotate(glm.mat4(1.0), glm.radians(euler.x), glm.vec3(1, 0, 0))
+        ry = glm.rotate(glm.mat4(1.0), glm.radians(euler.y), glm.vec3(0, 1, 0))
+        rz = glm.rotate(glm.mat4(1.0), glm.radians(euler.z), glm.vec3(0, 0, 1))
         return rz * ry * rx
 
     def _extract_euler_angles(self, mat):
@@ -447,7 +491,7 @@ class RubiksCubeRenderer:
         # This is one approach: pitch(y), yaw(x), roll(z). Might vary.
         # We'll do a simpler approach that might not handle gimbal lock well,
         # but is enough for snapping 90-degree increments.
-        sy = glm.sqrt(mat[0][0]*mat[0][0] + mat[1][0]*mat[1][0])
+        sy = glm.sqrt(mat[0][0] * mat[0][0] + mat[1][0] * mat[1][0])
         singular = sy < 1e-6
         if not singular:
             x = glm.degrees(glm.atan2(mat[2][1], mat[2][2]))
