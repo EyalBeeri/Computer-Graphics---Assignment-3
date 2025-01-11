@@ -46,7 +46,7 @@ class SmallCube:
 
         # For rotations around global center:
         #   model = rot * trans * scl
-        self.model_matrix = rot * trans * scl
+        self.model_matrix = trans * rot * scl
 
 
 class RubiksData:
