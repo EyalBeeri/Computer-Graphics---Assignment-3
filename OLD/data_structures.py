@@ -45,8 +45,8 @@ class SmallCube:
         trans = glm.translate(glm.mat4(1.0), self.position)
 
         # For rotations around global center:
-        #   model = rot * trans * scl
-        self.model_matrix = rot * trans * scl
+        #   model = trans * rot * scl
+        self.model_matrix =  trans * rot * scl
 
 
 class RubiksData:
@@ -64,7 +64,6 @@ class RubiksData:
         Build the NxNxN sub-cubes, each offset from the center so that (0,0,0) is the global center.
         If size=3, we have indices from 0..26 (27 cubes), or skip the internal if you want exactly 26 visible.
         """
-        offset = (self.size - 1) / 2.0
         index = 0
         for x in range(self.size):
             for y in range(self.size):
