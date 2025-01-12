@@ -40,13 +40,18 @@ class SmallCube:
         rot_y = glm.rotate(glm.mat4(1.0), glm.radians(self.rotation.y), glm.vec3(0, 1, 0))
         rot_x = glm.rotate(glm.mat4(1.0), glm.radians(self.rotation.x), glm.vec3(1, 0, 0))
         rot = rot_z * rot_y * rot_x
+        
 
         # Translation
         trans = glm.translate(glm.mat4(1.0), self.position)
 
+        # # For rotations around object center:
+        # #   model = trans * rot * scl
+        # self.model_matrix =  trans * rot * scl
+        
         # For rotations around global center:
-        #   model = trans * rot * scl
-        self.model_matrix =  trans * rot * scl
+        #   model = rot * trans * scl
+        self.model_matrix =  rot * trans * scl
 
 
 class RubiksData:

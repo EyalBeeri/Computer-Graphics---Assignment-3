@@ -40,6 +40,8 @@ class RubiksCubeRenderer:
         self.animation_speed = 180.0  # degrees per second
         self.rotating_cubes = []
 
+        self.cube_orientation = glm.mat4(1.0)
+
     def _create_cube_vao(self):
         """
         Create a full 3D textured-cube geometry (36 vertices or 24+indices).
@@ -117,7 +119,7 @@ class RubiksCubeRenderer:
         glEnableVertexAttribArray(2)
 
         glBindVertexArray(0)
-
+        
     def draw(self, view, projection):
         """
         Normal rendering pass (u_PickingMode = false).
@@ -142,7 +144,7 @@ class RubiksCubeRenderer:
         glUniform4f(color_loc, 1.0, 1.0, 1.0, 1.0)
 
         for scube in self.data.sub_cubes:
-            model = scube.model_matrix
+            model = self.cube_orientation * scube.model_matrix
             mvp = projection * view * model
             mvp_loc = glGetUniformLocation(self.shader_program, "u_MVP")
             glUniformMatrix4fv(mvp_loc, 1, GL_FALSE, glm.value_ptr(mvp))
@@ -267,6 +269,16 @@ class RubiksCubeRenderer:
             return [scube for scube in self.data.sub_cubes if scube.grid_coords[2] == 0]
         else:
             raise ValueError(f"Unknown face: {face}")
+        
+
+    def describe_cube(self, cube):
+        """
+        Describe the cube's position and color.
+        """
+        coords = cube.grid_coords
+        position = cube.position
+        rotation = cube.rotation
+        return f"Cube index: {cube.index}, Coords: {coords}, Position: {position}, Rotation: {rotation}"
 
     def _update_animation(self):
         if not self.is_animating:
@@ -302,6 +314,9 @@ class RubiksCubeRenderer:
         rot_mat = glm.rotate(glm.mat4(1.0), glm.radians(angle_deg), axis)
 
         for scube in self.rotating_cubes:
+
+            print(self.describe_cube(scube))
+
             # Move to origin, rotate, move back
             pos = scube.position - pivot
             pos = glm.vec3(rot_mat * glm.vec4(pos, 1.0))
@@ -314,7 +329,7 @@ class RubiksCubeRenderer:
         # When animation completes, update cube positions
         if not self.is_animating:
             self._snap_cubes_to_grid()
-            self._update_face_colors()
+            # self._update_face_colors()
 
     def _get_cube_colors(self, cube):
         """Get current colors of cube faces"""
@@ -340,13 +355,21 @@ class RubiksCubeRenderer:
 
         vertices_per_face = 4
         floats_per_vertex = 8
+        faces_per_cube = 6
 
-        start_idx = 0  # Don't use cube.index
-        for face in range(6):
+        # Calculate the correct starting index
+        start_idx = cube.index * vertices_per_face * faces_per_cube * floats_per_vertex
+
+        for face in range(faces_per_cube):
             for vertex in range(vertices_per_face):
-                vertex_start = (start_idx + face * 4 + vertex) * floats_per_vertex
-                if vertex_start + 6 <= len(self.vertices):  # Bounds check
+                vertex_start = start_idx + (face * vertices_per_face + vertex) * floats_per_vertex
+                # if vertex_start + 6 <= len(self.vertices):  # Bounds check
+                try:
+                    print(f"Setting color for cube {cube.index}, face {face}, vertex {vertex}")
+                    print(f"Color shape: {colors[face][vertex].shape}")
                     self.vertices[vertex_start + 3:vertex_start + 6] = colors[face][vertex]
+                except ValueError as e:
+                    print(f"Error setting colors for cube {cube.index}, face {face}, vertex {vertex}: {e}")
 
         # Update VBO
         glBindBuffer(GL_ARRAY_BUFFER, self.VBO)
@@ -362,7 +385,7 @@ class RubiksCubeRenderer:
 
         # Calculate new positions
         n = int(len(self.rotating_cubes) ** 0.5)  # Should be 3 for a 3x3 cube
-        new_indices = self._get_rotated_indices(n, self.clockwise)
+        new_indices = self._get_rotated_indices(n, self.clockwise, self.current_face)
 
         # Safety check
         if len(new_indices) != len(self.rotating_cubes):
@@ -379,15 +402,42 @@ class RubiksCubeRenderer:
                 except Exception as e:
                     print(f"Error setting colors for cube {i} with new_idx {new_idx}: {e}")
 
-    def _get_rotated_indices(self, n, clockwise):
+    def _get_rotated_indices(self, n, clockwise, face):
         """Get new indices order after rotation"""
         indices = list(range(n * n))
-        if clockwise:
-            # For clockwise rotation on left face
-            return [n * j + i for i in range(n - 1, -1, -1) for j in range(n)]
+        
+        if face == 'L':  # Left face
+            if clockwise:
+                return [n * j + i for i in range(n - 1, -1, -1) for j in range(n)]
+            else:
+                return [n * j + i for i in range(n) for j in range(n - 1, -1, -1)]
+        elif face == 'R':  # Right face
+            if clockwise:
+                return [n * j + i for i in range(n) for j in range(n - 1, -1, -1)]
+            else:
+                return [n * j + i for i in range(n - 1, -1, -1) for j in range(n)]
+        elif face == 'U':  # Upper face
+            if clockwise:
+                return [n * i + j for j in range(n - 1, -1, -1) for i in range(n)]
+            else:
+                return [n * i + j for j in range(n) for i in range(n - 1, -1, -1)]
+        elif face == 'D':  # Down face
+            if clockwise:
+                return [n * i + j for j in range(n) for i in range(n - 1, -1, -1)]
+            else:
+                return [n * i + j for j in range(n - 1, -1, -1) for i in range(n)]
+        elif face == 'F':  # Front face
+            if clockwise:
+                return [n * j + i for i in range(n - 1, -1, -1) for j in range(n)]
+            else:
+                return [n * j + i for i in range(n) for j in range(n - 1, -1, -1)]
+        elif face == 'B':  # Back face
+            if clockwise:
+                return [n * j + i for i in range(n) for j in range(n - 1, -1, -1)]
+            else:
+                return [n * j + i for i in range(n - 1, -1, -1) for j in range(n)]
         else:
-            # For counter-clockwise rotation on left face
-            return [n * j + i for i in range(n) for j in range(n - 1, -1, -1)]
+            raise ValueError(f"Unknown face: {face}")
 
     def _snap_cubes_to_grid(self):
         """After the animation, update each rotating cube’s grid-coords and recalc position."""
@@ -450,7 +500,7 @@ class RubiksCubeRenderer:
                     new_x = y
                     new_y = offset - x
                 scube.grid_coords = (new_x, new_y, z)
-
+            # scube.rotation = glm.vec3(0)
             scube._update_position_from_coords()
 
     def _snap_to_90(self, angle):
@@ -478,27 +528,3 @@ class RubiksCubeRenderer:
         elif face == 'B':
             return (glm.vec3(0, 0, -1), glm.vec3(0, 0, -offset))
         return (glm.vec3(0, 0, 0), glm.vec3(0, 0, 0))
-
-    def _build_orientation_matrix(self, euler):
-        # Convert Euler angles (degrees) to a rotation matrix
-        rx = glm.rotate(glm.mat4(1.0), glm.radians(euler.x), glm.vec3(1, 0, 0))
-        ry = glm.rotate(glm.mat4(1.0), glm.radians(euler.y), glm.vec3(0, 1, 0))
-        rz = glm.rotate(glm.mat4(1.0), glm.radians(euler.z), glm.vec3(0, 0, 1))
-        return rz * ry * rx
-
-    def _extract_euler_angles(self, mat):
-        # Extract Euler angles from a rotation matrix in ZYX order
-        # This is one approach: pitch(y), yaw(x), roll(z). Might vary.
-        # We'll do a simpler approach that might not handle gimbal lock well,
-        # but is enough for snapping 90-degree increments.
-        sy = glm.sqrt(mat[0][0] * mat[0][0] + mat[1][0] * mat[1][0])
-        singular = sy < 1e-6
-        if not singular:
-            x = glm.degrees(glm.atan2(mat[2][1], mat[2][2]))
-            y = glm.degrees(glm.atan2(-mat[2][0], sy))
-            z = glm.degrees(glm.atan2(mat[1][0], mat[0][0]))
-        else:
-            x = glm.degrees(glm.atan2(-mat[1][2], mat[1][1]))
-            y = glm.degrees(glm.atan2(-mat[2][0], sy))
-            z = 0
-        return glm.vec3(x, y, z)

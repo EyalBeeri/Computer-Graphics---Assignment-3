@@ -110,22 +110,29 @@ def key_callback(window, key, scancode, action, mods):
 
         # Arrow keys => rotate entire cube around scene X/Y 
         elif key == glfw.KEY_UP:
-            # Rotate all sub-cubes around global X by +10 deg, for example
-            for scube in rubiks_renderer.data.sub_cubes:
-                scube.rotation.x += 10.0
-                scube.update_model_matrix()
+            rubiks_renderer.cube_orientation = glm.rotate(
+                rubiks_renderer.cube_orientation,
+                glm.radians(10.0),
+                glm.vec3(1,0,0)
+            )
         elif key == glfw.KEY_DOWN:
-            for scube in rubiks_renderer.data.sub_cubes:
-                scube.rotation.x -= 10.0
-                scube.update_model_matrix()
+            rubiks_renderer.cube_orientation = glm.rotate(
+                rubiks_renderer.cube_orientation,
+                glm.radians(-10.0),
+                glm.vec3(1,0,0)
+            )
         elif key == glfw.KEY_LEFT:
-            for scube in rubiks_renderer.data.sub_cubes:
-                scube.rotation.y -= 10.0
-                scube.update_model_matrix()
+            rubiks_renderer.cube_orientation = glm.rotate(
+                rubiks_renderer.cube_orientation,
+                glm.radians(-10.0),
+                glm.vec3(0,1,0)
+            )
         elif key == glfw.KEY_RIGHT:
-            for scube in rubiks_renderer.data.sub_cubes:
-                scube.rotation.y += 10.0
-                scube.update_model_matrix()
+            rubiks_renderer.cube_orientation = glm.rotate(
+                rubiks_renderer.cube_orientation,
+                glm.radians(10.0),
+                glm.vec3(0,1,0)
+            )
 
         # Toggle picking mode
         elif key == glfw.KEY_P:
