@@ -17,9 +17,9 @@ class Camera:
         self.far = 100.0
 
         # Position on a sphere, looking at the origin
-        self.radius = 8.0
-        self.yaw = 0.0
-        self.pitch = 0.0
+        self.radius = 10.0
+        self.yaw = 45.0
+        self.pitch = 22.5
 
         # For panning in the XY plane
         self.panX = 0.0
