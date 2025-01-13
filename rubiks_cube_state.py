@@ -8,10 +8,10 @@ import pyglm
 
 
 class CubePiece:
-    def __init__(self, position, index):
+    def __init__(self, position, index, N=3):
         self.initial_position = position.copy()
         self.index = index
-        # Initialize transformation matrix
+        self.N = N  # Store N so we know how big the cube is
         self.transform = glm.mat4(1.0)
         self.transform = glm.translate(self.transform, glm.vec3(*position))
         self.faces = self._determine_faces()
@@ -48,15 +48,45 @@ class CubePiece:
         return x, y, z  # Returns Euler angles in radians
 
     def _determine_faces(self):
-        """Determine which faces this piece belongs to based on its initial position"""
+        """
+        For an N×N cube, compute which outer faces this piece belongs to.
+        For example, for a 3×3 cube, the outer layers have coordinates ±(1.1).
+        For a 4×4 cube, ±(1.5*1.1), etc.
+        """
         faces = []
+        # The offset is how many steps you go from 0 to reach the outermost layer.
+        # For N=3, offset=1; for N=4, offset=1.5; for N=5, offset=2, etc.
+        offset = (self.N - 1) / 2.0
+
+        # The step is how far apart each piece is placed. You've been using 1.1.
+        step = 1.1
+
+        # Threshold to decide if a coordinate is "close enough" to the outer layer
+        threshold = 0.05
+
+        # Current piece position in (x, y, z)
         x, y, z = self.initial_position
-        if abs(x - 1.1) < 0.1: faces.append('R')
-        if abs(x + 1.1) < 0.1: faces.append('L')
-        if abs(y - 1.1) < 0.1: faces.append('U')
-        if abs(y + 1.1) < 0.1: faces.append('D')
-        if abs(z - 1.1) < 0.1: faces.append('F')
-        if abs(z + 1.1) < 0.1: faces.append('B')
+
+        # Compare each coordinate with ±(offset * step)
+        # Right
+        if abs(x - ( offset * step )) < threshold:
+            faces.append('R')
+        # Left
+        if abs(x - ( -offset * step )) < threshold:
+            faces.append('L')
+        # Up
+        if abs(y - ( offset * step )) < threshold:
+            faces.append('U')
+        # Down
+        if abs(y - ( -offset * step )) < threshold:
+            faces.append('D')
+        # Front
+        if abs(z - ( offset * step )) < threshold:
+            faces.append('F')
+        # Back
+        if abs(z - ( -offset * step )) < threshold:
+            faces.append('B')
+
         return faces
 
     def update_faces(self):
@@ -79,26 +109,41 @@ class CubePiece:
         if abs(pos[2] + 1.1) < 0.1: self.faces.append('B')
 
 class RubiksCubeState:
-    def __init__(self):
+    def __init__(self, N=3):
+        self.N = N
         self.pieces = {}
         self._initialize_pieces()
 
     def _initialize_pieces(self):
+        """
+        For an NxN cube, we'll create N^3 pieces, each offset by (x - offset),
+        (y - offset), (z - offset) in steps of 1.1 (or whatever your gap is).
+        """
         index = 0
-        for x in range(-1, 2):
-            for y in range(-1, 2):
-                for z in range(-1, 2):
-                    position = [x * 1.1, y * 1.1, z * 1.1]
+        offset = (self.N - 1) / 2.0  # For 3x3, offset=1; for 4x4, offset=1.5, etc.
+
+        for x in range(self.N):
+            for y in range(self.N):
+                for z in range(self.N):
+                    # Compute actual position in 3D
+                    px = (x - offset) * 1.1
+                    py = (y - offset) * 1.1
+                    pz = (z - offset) * 1.1
+                    position = [px, py, pz]
+
+                    # Create a piece
                     self.pieces[index] = CubePiece(position, index)
                     index += 1
 
     def get_face_pieces(self, face):
-        """Get indices of pieces belonging to a specific face"""
+        axis_index, value = self.face_coordinates[face]
         face_pieces = []
-        for index, piece in self.pieces.items():
-            if face in piece.faces:
-                face_pieces.append(index)
+        for idx, piece in self.state.pieces.items():
+            pos_value = piece.current_position[axis_index]
+            if abs(pos_value - value) < 0.1:
+                face_pieces.append(idx)
         return face_pieces
+
 
     def update_piece_position(self, index, new_position):
         """Update the position of a specific piece"""
@@ -115,8 +160,10 @@ class RubiksCubeState:
 
 
 class RubiksCubeController:
-    def __init__(self):
-        self.state = RubiksCubeState()
+    def __init__(self, N=3):
+        self.state = RubiksCubeState(N=N)
+        self.N = N
+        offset = (N - 1) / 2.0
         # Add rotation angle state
         self.direction = 1
         self.angle = 90
@@ -144,12 +191,12 @@ class RubiksCubeController:
         }
 
         self.face_coordinates = {
-            'R': (0, 1.1),  # x = 1.1
-            'L': (0, -1.1),  # x = -1.1
-            'U': (1, 1.1),  # y = 1.1
-            'D': (1, -1.1),  # y = -1.1
-            'F': (2, 1.1),  # z = 1.1
-            'B': (2, -1.1)  # z = -1.1
+            'R': (0, +offset*1.1),  # x = +offset*1.1
+            'L': (0, -offset*1.1),  # x = -offset*1.1
+            'U': (1, +offset*1.1),  # y = +offset*1.1
+            'D': (1, -offset*1.1),  # y = -offset*1.1
+            'F': (2, +offset*1.1),  # z = +offset*1.1
+            'B': (2, -offset*1.1),  # z = -offset*1.1
         }
 
     def toggle_direction(self):

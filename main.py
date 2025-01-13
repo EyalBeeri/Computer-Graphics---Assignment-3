@@ -9,9 +9,10 @@ from rubiks_cube_state import RubiksCubeController
 
 
 class RubiksCube:
-    def __init__(self, width=800, height=600):
+    def __init__(self, width=800, height=600, N=3):
+        self.N = N
         self.camera = Camera(width, height)
-        self.cube_controller = RubiksCubeController()
+        self.cube_controller = RubiksCubeController(N=self.N)
 
         with open('shaders/basic.vert', 'r') as f:
             self.VERTEX_SHADER = f.read()
@@ -190,7 +191,7 @@ def main():
 
     glfw.make_context_current(window)
 
-    cube = RubiksCube(800, 600)
+    cube = RubiksCube(width=800, height=600, N=4)
     cube.init_gl()
 
     def mouse_callback(window, xpos, ypos):
