@@ -1,263 +1,239 @@
 import glfw
 from OpenGL.GL import *
+from OpenGL.GL import shaders
+import numpy as np
+from PIL import Image
 import glm
-import os
-
-# Local imports
 from camera import Camera
-from data_structures import RubiksData
-from rubik import RubiksCubeRenderer
-from solver import RubikSolver
-from picking import ColorPickingManager
+from rubiks_cube_state import RubiksCubeController
 
-##############################
-# Global Variables
-##############################
 
-WIN_WIDTH = 800
-WIN_HEIGHT = 800
+class RubiksCube:
+    def __init__(self, width=800, height=600):
+        self.camera = Camera(width, height)
+        self.cube_controller = RubiksCubeController()
 
-camera = None
-picking_manager = None
-rubiks_renderer = None
+        with open('shaders/basic.vert', 'r') as f:
+            self.VERTEX_SHADER = f.read()
+        with open('shaders/basic.frag', 'r') as f:
+            self.FRAGMENT_SHADER = f.read()
 
-##############################
-# Callbacks
-##############################
+        self.COLORS = {
+            'white': [1.0, 1.0, 1.0],
+            'yellow': [1.0, 1.0, 0.0],
+            'red': [1.0, 0.0, 0.0],
+            'orange': [1.0, 0.5, 0.0],
+            'green': [0.0, 1.0, 0.0],
+            'blue': [0.0, 0.0, 1.0]
+        }
 
-def mouse_button_callback(window, button, action, mods):
-    global picking_manager, rubiks_renderer
+        # Same vertices as before but with texture coordinates
+        self.vertices = np.array([
+            # Format: x, y, z, r, g, b, tex_x, tex_y
+            # Front face (white)
+            -0.5, -0.5, 0.5, 1.0, 1.0, 1.0, 0.0, 1.0,
+            0.5, -0.5, 0.5, 1.0, 1.0, 1.0, 1.0, 1.0,
+            0.5, 0.5, 0.5, 1.0, 1.0, 1.0, 1.0, 0.0,
+            -0.5, 0.5, 0.5, 1.0, 1.0, 1.0, 0.0, 0.0,
 
-    # Left or right click pressed => do picking if picking mode is on
-    if button == glfw.MOUSE_BUTTON_LEFT and action == glfw.PRESS:
-        # In picking mode, pick a sub-cube. Otherwise do normal camera orbit.
-        if picking_manager.enabled:
-            x, y = glfw.get_cursor_pos(window)
-            picking_manager.pick(window, int(x), int(y), WIN_WIDTH, WIN_HEIGHT)
-        else:
-            print("MOUSE LEFT CLICK (rotate camera or if face rotation in assignment)")
+            # Back face (yellow)
+            -0.5, -0.5, -0.5, 1.0, 1.0, 0.0, 0.0, 1.0,
+            0.5, -0.5, -0.5, 1.0, 1.0, 0.0, 1.0, 1.0,
+            0.5, 0.5, -0.5, 1.0, 1.0, 0.0, 1.0, 0.0,
+            -0.5, 0.5, -0.5, 1.0, 1.0, 0.0, 0.0, 0.0,
 
-    elif button == glfw.MOUSE_BUTTON_RIGHT and action == glfw.PRESS:
-        if picking_manager.enabled:
-            x, y = glfw.get_cursor_pos(window)
-            picking_manager.pick(window, int(x), int(y), WIN_WIDTH, WIN_HEIGHT)
-        else:
-            print("MOUSE RIGHT CLICK (panning camera)")
+            # Right face (red)
+            0.5, -0.5, -0.5, 1.0, 0.0, 0.0, 0.0, 1.0,
+            0.5, 0.5, -0.5, 1.0, 0.0, 0.0, 1.0, 1.0,
+            0.5, 0.5, 0.5, 1.0, 0.0, 0.0, 1.0, 0.0,
+            0.5, -0.5, 0.5, 1.0, 0.0, 0.0, 0.0, 0.0,
 
-def cursor_position_callback(window, xpos, ypos):
-    global camera, picking_manager
+            # Left face (orange)
+            -0.5, -0.5, -0.5, 1.0, 0.5, 0.0, 0.0, 1.0,
+            -0.5, 0.5, -0.5, 1.0, 0.5, 0.0, 1.0, 1.0,
+            -0.5, 0.5, 0.5, 1.0, 0.5, 0.0, 1.0, 0.0,
+            -0.5, -0.5, 0.5, 1.0, 0.5, 0.0, 0.0, 0.0,
 
-    if not picking_manager.enabled:
-        # Normal camera orbit/pan
-        camera.process_mouse_motion(window, xpos, ypos)
-    else:
-        # If a sub-cube is picked and user holds left => rotate that cube
-        # If a sub-cube is picked and user holds right => translate that cube
-        dx = xpos - camera.last_mouse_x
-        dy = ypos - camera.last_mouse_y
-        camera.last_mouse_x = xpos
-        camera.last_mouse_y = ypos
+            # Top face (green)
+            -0.5, 0.5, -0.5, 0.0, 1.0, 0.0, 0.0, 1.0,
+            0.5, 0.5, -0.5, 0.0, 1.0, 0.0, 1.0, 1.0,
+            0.5, 0.5, 0.5, 0.0, 1.0, 0.0, 1.0, 0.0,
+            -0.5, 0.5, 0.5, 0.0, 1.0, 0.0, 0.0, 0.0,
 
-        if glfw.get_mouse_button(window, glfw.MOUSE_BUTTON_LEFT) == glfw.PRESS:
-            picking_manager.rotate_picked_cube(dx, -dy, camera)
-        elif glfw.get_mouse_button(window, glfw.MOUSE_BUTTON_RIGHT) == glfw.PRESS:
-            picking_manager.translate_picked_cube(dx, dy, camera)
+            # Bottom face (blue)
+            -0.5, -0.5, -0.5, 0.0, 0.0, 1.0, 0.0, 1.0,
+            0.5, -0.5, -0.5, 0.0, 0.0, 1.0, 1.0, 1.0,
+            0.5, -0.5, 0.5, 0.0, 0.0, 1.0, 1.0, 0.0,
+            -0.5, -0.5, 0.5, 0.0, 0.0, 1.0, 0.0, 0.0,
+        ], dtype=np.float32)
 
-def scroll_callback(window, xoffset, yoffset):
-    global camera
-    camera.process_scroll(yoffset)
+        self.indices = np.array([
+            0, 1, 2, 2, 3, 0,  # Front
+            4, 5, 6, 6, 7, 4,  # Back
+            8, 9, 10, 10, 11, 8,  # Right
+            12, 13, 14, 14, 15, 12,  # Left
+            16, 17, 18, 18, 19, 16,  # Top
+            20, 21, 22, 22, 23, 20  # Bottom
+        ], dtype=np.uint32)
 
-def key_callback(window, key, scancode, action, mods):
-    global rubiks_renderer, picking_manager
+        self.shader = None
+        self.vao = None
+        self.vbo = None
+        self.ebo = None
+        self.texture = None
 
-    if action == glfw.PRESS or action == glfw.REPEAT:
-        # Quit with Esc
-        if key == glfw.KEY_ESCAPE:
-            glfw.set_window_should_close(window, True)
-        
-        # Face rotations
-        elif key == glfw.KEY_R:
-            rubiks_renderer.rotate_face('R', rubiks_renderer.clockwise)
-        elif key == glfw.KEY_L:
-            rubiks_renderer.rotate_face('L', rubiks_renderer.clockwise)
-        elif key == glfw.KEY_U:
-            rubiks_renderer.rotate_face('U', rubiks_renderer.clockwise)
-        elif key == glfw.KEY_D:
-            rubiks_renderer.rotate_face('D', rubiks_renderer.clockwise)
-        elif key == glfw.KEY_F:
-            rubiks_renderer.rotate_face('F', rubiks_renderer.clockwise)
-        elif key == glfw.KEY_B:
-            rubiks_renderer.rotate_face('B', rubiks_renderer.clockwise)
+    def load_texture(self, path):
+        self.texture = glGenTextures(1)
+        glBindTexture(GL_TEXTURE_2D, self.texture)
 
-        # Flip rotation direction
-        elif key == glfw.KEY_SPACE:
-            rubiks_renderer.clockwise = not rubiks_renderer.clockwise
-            print("Now rotation is clockwise=", rubiks_renderer.clockwise)
+        # Set texture wrapping parameters
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT)
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT)
 
-        # Z => Halve rotation angle
-        elif key == glfw.KEY_Z:
-            rubiks_renderer.rotation_angle /= 2.0
-            if rubiks_renderer.rotation_angle < 45.0:
-                rubiks_renderer.rotation_angle = 45.0
-            print("Rotation angle:", rubiks_renderer.rotation_angle)
+        # Set texture filtering parameters
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR)
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR)
 
-        # A => Double rotation angle
-        elif key == glfw.KEY_A:
-            rubiks_renderer.rotation_angle *= 2.0
-            if rubiks_renderer.rotation_angle > 180.0:
-                rubiks_renderer.rotation_angle = 180.0
-            print("Rotation angle:", rubiks_renderer.rotation_angle)
+        # Load image
+        try:
+            image = Image.open(path)
+            image = image.transpose(Image.FLIP_TOP_BOTTOM)  # Flip the image
+            if image.mode != 'RGB':
+                image = image.convert('RGB')
+            img_data = image.tobytes()
+            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, image.width, image.height, 0, GL_RGB, GL_UNSIGNED_BYTE, img_data)
+            glGenerateMipmap(GL_TEXTURE_2D)
+            print(f"Texture loaded successfully: {path}")
+        except Exception as e:
+            print(f"Error loading texture {path}: {e}")
 
-        # Arrow keys => rotate entire cube around scene X/Y 
-        elif key == glfw.KEY_UP:
-            # Rotate all sub-cubes around global X by +10 deg, for example
-            for scube in rubiks_renderer.data.sub_cubes:
-                scube.rotation.x += 10.0
-                scube.update_model_matrix()
-        elif key == glfw.KEY_DOWN:
-            for scube in rubiks_renderer.data.sub_cubes:
-                scube.rotation.x -= 10.0
-                scube.update_model_matrix()
-        elif key == glfw.KEY_LEFT:
-            for scube in rubiks_renderer.data.sub_cubes:
-                scube.rotation.y -= 10.0
-                scube.update_model_matrix()
-        elif key == glfw.KEY_RIGHT:
-            for scube in rubiks_renderer.data.sub_cubes:
-                scube.rotation.y += 10.0
-                scube.update_model_matrix()
+    def init_gl(self):
+        # Compile shaders
+        vertex_shader = shaders.compileShader(self.VERTEX_SHADER, GL_VERTEX_SHADER)
+        fragment_shader = shaders.compileShader(self.FRAGMENT_SHADER, GL_FRAGMENT_SHADER)
+        self.shader = shaders.compileProgram(vertex_shader, fragment_shader)
 
-        # Toggle picking mode
-        elif key == glfw.KEY_P:
-            picking_manager.toggle()
+        # Create and bind VAO
+        self.vao = glGenVertexArrays(1)
+        glBindVertexArray(self.vao)
 
-        # Mixer => random scramble
-        elif key == glfw.KEY_M:
-            rubiks_renderer.solver.random_mixer(rubiks_renderer, steps=10)
+        # Create and bind VBO
+        self.vbo = glGenBuffers(1)
+        glBindBuffer(GL_ARRAY_BUFFER, self.vbo)
+        glBufferData(GL_ARRAY_BUFFER, self.vertices.nbytes, self.vertices, GL_STATIC_DRAW)
 
-        # Solver => naive unscramble
-        elif key == glfw.KEY_S:
-            rubiks_renderer.solver.solve(rubiks_renderer)
+        # Create and bind EBO
+        self.ebo = glGenBuffers(1)
+        glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, self.ebo)
+        glBufferData(GL_ELEMENT_ARRAY_BUFFER, self.indices.nbytes, self.indices, GL_STATIC_DRAW)
+
+        # Position attribute
+        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 8 * 4, None)
+        glEnableVertexAttribArray(0)
+        # Color attribute
+        glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 8 * 4, ctypes.c_void_p(3 * 4))
+        glEnableVertexAttribArray(1)
+        # Texture coordinate attribute
+        glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, 8 * 4, ctypes.c_void_p(6 * 4))
+        glEnableVertexAttribArray(2)
+
+        # Load texture
+        self.load_texture("textures/plane.png")
+
+        # Enable depth testing
+        glEnable(GL_DEPTH_TEST)
+
+    def draw(self):
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
+        glUseProgram(self.shader)
+
+        # Set uniforms
+        glUniform4f(glGetUniformLocation(self.shader, "u_Color"), 1.0, 1.0, 1.0, 1.0)
+        glUniform1i(glGetUniformLocation(self.shader, "u_PickingMode"), 0)
+        glUniform1i(glGetUniformLocation(self.shader, "u_Texture"), 0)  # Set texture unit 0
+
+        # Activate texture
+        glActiveTexture(GL_TEXTURE0)
+        glBindTexture(GL_TEXTURE_2D, self.texture)
+
+        view = self.camera.get_view_matrix()
+        projection = self.camera.get_perspective_matrix()
+
+        for piece in self.cube_controller.state.pieces.values():
+            model = glm.mat4(1.0)
+
+            # First translate to piece position
+            model = glm.translate(model, glm.vec3(*piece.current_position))
+
+            # Then apply rotations in the correct order
+            # Note: glm.rotate takes angle in radians, so we convert from degrees
+            if piece.rotation[0] != 0:  # X rotation
+                model = glm.rotate(model, glm.radians(piece.rotation[0]), glm.vec3(1, 0, 0))
+            if piece.rotation[1] != 0:  # Y rotation
+                model = glm.rotate(model, glm.radians(piece.rotation[1]), glm.vec3(0, 1, 0))
+            if piece.rotation[2] != 0:  # Z rotation
+                model = glm.rotate(model, glm.radians(piece.rotation[2]), glm.vec3(0, 0, 1))
+
+            # Calculate MVP matrix
+            mvp = projection * view * model
+
+            # Send MVP matrix to shader
+            glUniformMatrix4fv(glGetUniformLocation(self.shader, "u_MVP"), 1, GL_FALSE, glm.value_ptr(mvp))
+
+            # Draw the cube piece
+            glBindVertexArray(self.vao)
+            glDrawElements(GL_TRIANGLES, len(self.indices), GL_UNSIGNED_INT, None)
+
 
 def main():
-    global camera, picking_manager, rubiks_renderer
-
     if not glfw.init():
-        print("Failed to init GLFW")
         return
 
-    # Create window
-    window = glfw.create_window(WIN_WIDTH, WIN_HEIGHT, "Rubik's Cube - Full Assignment", None, None)
+    window = glfw.create_window(800, 600, "Rubik's Cube", None, None)
     if not window:
         glfw.terminate()
         return
 
     glfw.make_context_current(window)
 
-    # Callbacks
-    glfw.set_mouse_button_callback(window, mouse_button_callback)
-    glfw.set_cursor_pos_callback(window, cursor_position_callback)
+    cube = RubiksCube(800, 600)
+    cube.init_gl()
+
+    def mouse_callback(window, xpos, ypos):
+        cube.camera.process_mouse_motion(window, xpos, ypos)
+
+    def scroll_callback(window, xoffset, yoffset):
+        cube.camera.process_scroll(yoffset)
+
+    def key_callback(window, key, scancode, action, mods):
+        if action == glfw.PRESS:
+            if key == glfw.KEY_R:
+                cube.cube_controller.process_keyboard('R')
+            elif key == glfw.KEY_L:
+                cube.cube_controller.process_keyboard('L')
+            elif key == glfw.KEY_U:
+                cube.cube_controller.process_keyboard('U')
+            elif key == glfw.KEY_D:
+                cube.cube_controller.process_keyboard('D')
+            elif key == glfw.KEY_F:
+                cube.cube_controller.process_keyboard('F')
+            elif key == glfw.KEY_B:
+                cube.cube_controller.process_keyboard('B')
+
+    glfw.set_cursor_pos_callback(window, mouse_callback)
     glfw.set_scroll_callback(window, scroll_callback)
     glfw.set_key_callback(window, key_callback)
 
-    # Setup camera
-    camera = Camera(WIN_WIDTH, WIN_HEIGHT)
+    glClearColor(0.2, 0.3, 0.3, 1.0)
 
-    # Load/compile shaders
-    shader_prog = create_shader_program(
-        os.path.join("shaders", "basic.vert"),
-        os.path.join("shaders", "basic.frag")
-    )
-
-    # Load texture
-    texture_id = load_texture(os.path.join("textures", "plane.png"))
-
-    # Enable depth test
-    glEnable(GL_DEPTH_TEST)
-
-    # Build Rubik’s data (default 3x3, but can set other sizes for bonus)
-    rubiks_data = RubiksData(size=3)
-
-    # Create solver
-    from solver import RubikSolver
-    solver = RubikSolver()
-
-    # Create the renderer
-    rubiks_renderer = RubiksCubeRenderer(rubiks_data, shader_prog, texture_id, solver)
-
-    # Create picking manager
-    from picking import ColorPickingManager
-    picking_manager = ColorPickingManager(rubiks_renderer)
-
-    # Main loop
     while not glfw.window_should_close(window):
-        glViewport(0, 0, WIN_WIDTH, WIN_HEIGHT)
-        glClearColor(0, 0, 0, 1)
-        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
-
-        # Build camera transforms
-        view = camera.get_view_matrix()
-        proj = camera.get_perspective_matrix()
-
-        # Draw the rubik’s
-        rubiks_renderer.draw(view, proj)
-
+        cube.draw()
         glfw.swap_buffers(window)
         glfw.poll_events()
 
+
     glfw.terminate()
 
-def create_shader_program(vertex_path, fragment_path):
-    vertex_code = open(vertex_path, 'r').read()
-    fragment_code = open(fragment_path, 'r').read()
-
-    vs = glCreateShader(GL_VERTEX_SHADER)
-    glShaderSource(vs, vertex_code)
-    glCompileShader(vs)
-    if glGetShaderiv(vs, GL_COMPILE_STATUS) != GL_TRUE:
-        print(glGetShaderInfoLog(vs))
-        raise RuntimeError("Vertex shader compilation failed")
-
-    fs = glCreateShader(GL_FRAGMENT_SHADER)
-    glShaderSource(fs, fragment_code)
-    glCompileShader(fs)
-    if glGetShaderiv(fs, GL_COMPILE_STATUS) != GL_TRUE:
-        print(glGetShaderInfoLog(fs))
-        raise RuntimeError("Fragment shader compilation failed")
-
-    program = glCreateProgram()
-    glAttachShader(program, vs)
-    glAttachShader(program, fs)
-    glLinkProgram(program)
-
-    if glGetProgramiv(program, GL_LINK_STATUS) != GL_TRUE:
-        print(glGetProgramInfoLog(program))
-        raise RuntimeError("Shader program linking failed")
-
-    glDeleteShader(vs)
-    glDeleteShader(fs)
-    return program
-
-def load_texture(path):
-    from PIL import Image
-    image = Image.open(path)
-    image = image.transpose(Image.FLIP_TOP_BOTTOM)
-    img_data = image.convert("RGBA").tobytes()
-    width, height = image.size
-
-    tex_id = glGenTextures(1)
-    glBindTexture(GL_TEXTURE_2D, tex_id)
-
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT)
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT)
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR)
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR)
-
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0,
-                 GL_RGBA, GL_UNSIGNED_BYTE, img_data)
-    glGenerateMipmap(GL_TEXTURE_2D)
-    glBindTexture(GL_TEXTURE_2D, 0)
-    return tex_id
 
 if __name__ == "__main__":
     main()
