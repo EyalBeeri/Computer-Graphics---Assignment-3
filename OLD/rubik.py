@@ -281,250 +281,85 @@ class RubiksCubeRenderer:
         return f"Cube index: {cube.index}, Coords: {coords}, Position: {position}, Rotation: {rotation}"
 
     def _update_animation(self):
+        """
+        Update rotation animation for the currently rotating face.
+        """
         if not self.is_animating:
             return
 
         dt = 1.0 / 60.0
         step = self.animation_speed * dt
 
-        # Update current angle and check completion
+        # Increment the current angle and check for completion
         self.current_angle += step
         if self.current_angle >= self.target_angle:
             self.current_angle = self.target_angle
             self.is_animating = False
-            step = self.target_angle - (self.current_angle - step)  # Get exact remaining step
 
-            # Check if this will result in a half-turned face
-            is_half_turn = self.target_angle % 90 != 0
-            if is_half_turn:
-                if self.current_face in self.half_turned_faces:
-                    self.half_turned_faces.remove(self.current_face)
-                    if len(self.half_turned_faces) == 0:
-                        self.is_face_half_turned = False
-                    else:
-                        self.is_face_half_turned = True
-                else:
-                    self.half_turned_faces.append(self.current_face)
-                    self.is_face_half_turned = True
-
-
-        # Rotate cubes around axis
+        # Calculate rotation angle
         angle_deg = step if self.clockwise else -step
         axis, pivot = self._get_face_axis_and_pivot(self.current_face)
-        rot_mat = glm.rotate(glm.mat4(1.0), glm.radians(angle_deg), axis)
+
+        rotation_matrix = glm.rotate(glm.mat4(1.0), glm.radians(angle_deg), axis)
 
         for scube in self.rotating_cubes:
+            relative_position = scube.position - pivot
+            rotated_position = glm.vec3(rotation_matrix * glm.vec4(relative_position, 1.0))
+            scube.position = rotated_position + pivot
 
-            print(self.describe_cube(scube))
-
-            # Move to origin, rotate, move back
-            pos = scube.position - pivot
-            pos = glm.vec3(rot_mat * glm.vec4(pos, 1.0))
-            scube.position = pos + pivot
-
-            # Update rotation
             scube.rotation += angle_deg * axis
             scube.update_model_matrix()
 
-        # When animation completes, update cube positions
+        # Snap cubes to the grid after the animation completes
         if not self.is_animating:
             self._snap_cubes_to_grid()
-            # self._update_face_colors()
-
-    def _get_cube_colors(self, cube):
-        """Get current colors of cube faces"""
-        colors = []
-        vertices_per_face = 4
-        floats_per_vertex = 8  # x,y,z, r,g,b, u,v
-
-        start_idx = 0  # Don't use cube.index as it might be incorrect
-        for face in range(6):
-            face_colors = []
-            for vertex in range(vertices_per_face):
-                vertex_start = (start_idx + face * 4 + vertex) * floats_per_vertex
-                color = self.vertices[vertex_start + 3:vertex_start + 6].copy()  # Make a copy of the color
-                face_colors.append(color)
-            colors.append(face_colors)
-        return colors
-
-    def _set_cube_colors(self, cube, colors):
-        """Set new colors for cube faces"""
-        if not colors or not all(face_colors for face_colors in colors):
-            print("Warning: Invalid colors array")
-            return
-
-        vertices_per_face = 4
-        floats_per_vertex = 8
-        faces_per_cube = 6
-
-        # Calculate the correct starting index
-        start_idx = cube.index * vertices_per_face * faces_per_cube * floats_per_vertex
-
-        for face in range(faces_per_cube):
-            for vertex in range(vertices_per_face):
-                vertex_start = start_idx + (face * vertices_per_face + vertex) * floats_per_vertex
-                # if vertex_start + 6 <= len(self.vertices):  # Bounds check
-                try:
-                    print(f"Setting color for cube {cube.index}, face {face}, vertex {vertex}")
-                    print(f"Color shape: {colors[face][vertex].shape}")
-                    self.vertices[vertex_start + 3:vertex_start + 6] = colors[face][vertex]
-                except ValueError as e:
-                    print(f"Error setting colors for cube {cube.index}, face {face}, vertex {vertex}: {e}")
-
-        # Update VBO
-        glBindBuffer(GL_ARRAY_BUFFER, self.VBO)
-        glBufferData(GL_ARRAY_BUFFER, self.vertices.nbytes, self.vertices, GL_STATIC_DRAW)
-
-    def _update_face_colors(self):
-        """Update colors after rotation"""
-        # Store colors before rotation
-        original_colors = []
-        for cube in self.rotating_cubes:
-            colors = self._get_cube_colors(cube)
-            original_colors.append(colors)
-
-        # Calculate new positions
-        n = int(len(self.rotating_cubes) ** 0.5)  # Should be 3 for a 3x3 cube
-        new_indices = self._get_rotated_indices(n, self.clockwise, self.current_face)
-
-        # Safety check
-        if len(new_indices) != len(self.rotating_cubes):
-            print(
-                f"Warning: indices mismatch. new_indices={len(new_indices)}, rotating_cubes={len(self.rotating_cubes)}")
-            return
-
-        # Apply rotated colors
-        for i, cube in enumerate(self.rotating_cubes):
-            new_idx = new_indices[i]
-            if 0 <= new_idx < len(original_colors):  # Bounds check
-                try:
-                    self._set_cube_colors(cube, original_colors[new_idx])
-                except Exception as e:
-                    print(f"Error setting colors for cube {i} with new_idx {new_idx}: {e}")
-
-    def _get_rotated_indices(self, n, clockwise, face):
-        """Get new indices order after rotation"""
-        indices = list(range(n * n))
         
-        if face == 'L':  # Left face
-            if clockwise:
-                return [n * j + i for i in range(n - 1, -1, -1) for j in range(n)]
-            else:
-                return [n * j + i for i in range(n) for j in range(n - 1, -1, -1)]
-        elif face == 'R':  # Right face
-            if clockwise:
-                return [n * j + i for i in range(n) for j in range(n - 1, -1, -1)]
-            else:
-                return [n * j + i for i in range(n - 1, -1, -1) for j in range(n)]
-        elif face == 'U':  # Upper face
-            if clockwise:
-                return [n * i + j for j in range(n - 1, -1, -1) for i in range(n)]
-            else:
-                return [n * i + j for j in range(n) for i in range(n - 1, -1, -1)]
-        elif face == 'D':  # Down face
-            if clockwise:
-                return [n * i + j for j in range(n) for i in range(n - 1, -1, -1)]
-            else:
-                return [n * i + j for j in range(n - 1, -1, -1) for i in range(n)]
-        elif face == 'F':  # Front face
-            if clockwise:
-                return [n * j + i for i in range(n - 1, -1, -1) for j in range(n)]
-            else:
-                return [n * j + i for i in range(n) for j in range(n - 1, -1, -1)]
-        elif face == 'B':  # Back face
-            if clockwise:
-                return [n * j + i for i in range(n) for j in range(n - 1, -1, -1)]
-            else:
-                return [n * j + i for i in range(n - 1, -1, -1) for j in range(n)]
-        else:
-            raise ValueError(f"Unknown face: {face}")
+    
+    def _rotate_grid_coordinates(self, coords, axis, clockwise):
+        """
+        Rotate grid coordinates around the given axis by 90 degrees.
+        """
+        offset = (self.data.size - 1) / 2.0
+        position = glm.vec3(coords[0] - offset, coords[1] - offset, coords[2] - offset)
+
+        rotation_matrix = glm.mat4(1.0)
+        angle = glm.radians(-90 if clockwise else 90)
+        rotation_matrix = glm.rotate(rotation_matrix, angle, axis)
+
+        rotated_position = glm.vec3(rotation_matrix * glm.vec4(position, 1.0))
+        return (
+            round(rotated_position.x + offset),
+            round(rotated_position.y + offset),
+            round(rotated_position.z + offset),
+        )
+
 
     def _snap_cubes_to_grid(self):
-        """After the animation, update each rotating cube’s grid-coords and recalc position."""
-        size = self.data.size
-        offset = size - 1
+        """
+        Snap rotating cubes to their new grid positions after animation.
+        """
+        axis, pivot = self._get_face_axis_and_pivot(self.current_face)
 
         for scube in self.rotating_cubes:
-            x, y, z = scube.grid_coords
-
-            if self.current_face == 'R':
-                if self.clockwise:
-                    new_y = z
-                    new_z = offset - y
-                else:
-                    new_y = offset - z
-                    new_z = y
-                scube.grid_coords = (x, new_y, new_z)
-
-            elif self.current_face == 'L':
-                if self.clockwise:
-                    new_y = offset - z
-                    new_z = y
-                else:
-                    new_y = z
-                    new_z = offset - y
-                scube.grid_coords = (x, new_y, new_z)
-
-            elif self.current_face == 'U':
-                if self.clockwise:
-                    new_x = offset - z
-                    new_z = x
-                else:
-                    new_x = z
-                    new_z = offset - x
-                scube.grid_coords = (new_x, y, new_z)
-
-            elif self.current_face == 'D':
-                if self.clockwise:
-                    new_x = z
-                    new_z = offset - x
-                else:
-                    new_x = offset - z
-                    new_z = x
-                scube.grid_coords = (new_x, y, new_z)
-
-            elif self.current_face == 'F':
-                if self.clockwise:
-                    new_x = y
-                    new_y = offset - x
-                else:
-                    new_x = offset - y
-                    new_y = x
-                scube.grid_coords = (new_x, new_y, z)
-
-            elif self.current_face == 'B':
-                if self.clockwise:
-                    new_x = offset - y
-                    new_y = x
-                else:
-                    new_x = y
-                    new_y = offset - x
-                scube.grid_coords = (new_x, new_y, z)
-            # scube.rotation = glm.vec3(0)
+            scube.grid_coords = self._rotate_grid_coordinates(scube.grid_coords, axis, self.clockwise)
             scube._update_position_from_coords()
-
-    def _snap_to_90(self, angle):
-        # Snap angle in degrees to nearest multiple of 90
-        return round(angle / 90.0) * 90.0
 
     def _get_face_axis_and_pivot(self, face):
         """
-        Returns (axis, pivot_point).
-        axis is a glm.vec3 indicating local axis for that face rotation.
-        pivot is the center about which the rotation occurs.
-        For e.g. R face, pivot is (offset,0,0).
+        Returns the axis and pivot point for rotating a given face.
         """
         offset = (self.data.size - 1) / 2.0
         if face == 'R':
-            return (glm.vec3(1, 0, 0), glm.vec3(offset, 0, 0))
+            return glm.vec3(1, 0, 0), glm.vec3(offset, 0, 0)
         elif face == 'L':
-            return (glm.vec3(-1, 0, 0), glm.vec3(-offset, 0, 0))
+            return glm.vec3(-1, 0, 0), glm.vec3(-offset, 0, 0)
         elif face == 'U':
-            return (glm.vec3(0, 1, 0), glm.vec3(0, offset, 0))
+            return glm.vec3(0, 1, 0), glm.vec3(0, offset, 0)
         elif face == 'D':
-            return (glm.vec3(0, -1, 0), glm.vec3(0, -offset, 0))
+            return glm.vec3(0, -1, 0), glm.vec3(0, -offset, 0)
         elif face == 'F':
-            return (glm.vec3(0, 0, 1), glm.vec3(0, 0, offset))
+            return glm.vec3(0, 0, 1), glm.vec3(0, 0, offset)
         elif face == 'B':
-            return (glm.vec3(0, 0, -1), glm.vec3(0, 0, -offset))
-        return (glm.vec3(0, 0, 0), glm.vec3(0, 0, 0))
+            return glm.vec3(0, 0, -1), glm.vec3(0, 0, -offset)
+        else:
+            raise ValueError(f"Invalid face: {face}")
