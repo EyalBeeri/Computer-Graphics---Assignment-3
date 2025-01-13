@@ -150,7 +150,7 @@ class RubiksCube:
         # Set uniforms
         glUniform4f(glGetUniformLocation(self.shader, "u_Color"), 1.0, 1.0, 1.0, 1.0)
         glUniform1i(glGetUniformLocation(self.shader, "u_PickingMode"), 0)
-        glUniform1i(glGetUniformLocation(self.shader, "u_Texture"), 0)  # Set texture unit 0
+        glUniform1i(glGetUniformLocation(self.shader, "u_Texture"), 0)
 
         # Activate texture
         glActiveTexture(GL_TEXTURE0)
@@ -160,19 +160,8 @@ class RubiksCube:
         projection = self.camera.get_perspective_matrix()
 
         for piece in self.cube_controller.state.pieces.values():
-            model = glm.mat4(1.0)
-
-            # First translate to piece position
-            model = glm.translate(model, glm.vec3(*piece.current_position))
-
-            # Then apply rotations in the correct order
-            # Note: glm.rotate takes angle in radians, so we convert from degrees
-            if piece.rotation[0] != 0:  # X rotation
-                model = glm.rotate(model, glm.radians(piece.rotation[0]), glm.vec3(1, 0, 0))
-            if piece.rotation[1] != 0:  # Y rotation
-                model = glm.rotate(model, glm.radians(piece.rotation[1]), glm.vec3(0, 1, 0))
-            if piece.rotation[2] != 0:  # Z rotation
-                model = glm.rotate(model, glm.radians(piece.rotation[2]), glm.vec3(0, 0, 1))
+            # Use the piece's transformation matrix directly
+            model = piece.transform
 
             # Calculate MVP matrix
             mvp = projection * view * model

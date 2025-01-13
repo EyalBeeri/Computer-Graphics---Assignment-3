@@ -1,17 +1,54 @@
+import math
+
 import numpy as np
 import glm
 from math import radians
 
+import pyglm
+
+
 class CubePiece:
     def __init__(self, position, index):
         self.initial_position = position.copy()
-        self.current_position = position.copy()
         self.index = index
-        self.rotation = [0, 0, 0]  # rotation angles around x, y, z axes
+        # Initialize transformation matrix
+        self.transform = glm.mat4(1.0)
+        self.transform = glm.translate(self.transform, glm.vec3(*position))
         self.faces = self._determine_faces()
 
+    def apply_rotation(self, rotation_matrix):
+        # Compose the new rotation with existing transform
+        self.transform = rotation_matrix * self.transform
+
+    @property
+    def current_position(self):
+        """Extract position from transformation matrix"""
+        return [
+            self.transform[3][0],
+            self.transform[3][1],
+            self.transform[3][2]
+        ]
+
+    def get_orientation(self):
+        """Extract Euler angles (in radians) from the transformation matrix in XYZ order."""
+        rotation_matrix = glm.mat3(self.transform)  # Extract the 3x3 rotation matrix
+        sy = math.sqrt(rotation_matrix[0][0] ** 2 + rotation_matrix[1][0] ** 2)
+        singular = sy < 1e-6  # Check for gimbal lock
+
+        if not singular:
+            x = math.atan2(rotation_matrix[2][1], rotation_matrix[2][2])
+            y = math.atan2(-rotation_matrix[2][0], sy)
+            z = math.atan2(rotation_matrix[1][0], rotation_matrix[0][0])
+        else:
+            # Handle gimbal lock: only two angles are independent
+            x = math.atan2(-rotation_matrix[1][2], rotation_matrix[1][1])
+            y = math.atan2(-rotation_matrix[2][0], sy)
+            z = 0  # Arbitrarily set to zero
+
+        return x, y, z  # Returns Euler angles in radians
+
     def _determine_faces(self):
-        """Determine which faces this piece belongs to based on its position"""
+        """Determine which faces this piece belongs to based on its initial position"""
         faces = []
         x, y, z = self.initial_position
         if abs(x - 1.1) < 0.1: faces.append('R')
@@ -23,22 +60,27 @@ class CubePiece:
         return faces
 
     def update_faces(self):
-        """Recalculate face membership based on current position"""
+        """Recalculate face membership based on transformed position and orientation"""
         self.faces = []
-        x, y, z = self.current_position
-        if abs(x - 1.1) < 0.1: self.faces.append('R')
-        if abs(x + 1.1) < 0.1: self.faces.append('L')
-        if abs(y - 1.1) < 0.1: self.faces.append('U')
-        if abs(y + 1.1) < 0.1: self.faces.append('D')
-        if abs(z - 1.1) < 0.1: self.faces.append('F')
-        if abs(z + 1.1) < 0.1: self.faces.append('B')
+        # Extract position from transform
+        pos = self.current_position
+
+        # Get the transformed basis vectors
+        right = glm.normalize(glm.vec3(self.transform[0][0], self.transform[0][1], self.transform[0][2]))
+        up = glm.normalize(glm.vec3(self.transform[1][0], self.transform[1][1], self.transform[1][2]))
+        forward = glm.normalize(glm.vec3(self.transform[2][0], self.transform[2][1], self.transform[2][2]))
+
+        # Check face alignment using dot products
+        if abs(pos[0] - 1.1) < 0.1: self.faces.append('R')
+        if abs(pos[0] + 1.1) < 0.1: self.faces.append('L')
+        if abs(pos[1] - 1.1) < 0.1: self.faces.append('U')
+        if abs(pos[1] + 1.1) < 0.1: self.faces.append('D')
+        if abs(pos[2] - 1.1) < 0.1: self.faces.append('F')
+        if abs(pos[2] + 1.1) < 0.1: self.faces.append('B')
 
 class RubiksCubeState:
     def __init__(self):
         self.pieces = {}
-        self.current_rotation = None
-        self.rotation_angle = 90
-        self.rotation_direction = 1
         self._initialize_pieces()
 
     def _initialize_pieces(self):
@@ -76,12 +118,12 @@ class RubiksCubeController:
     def __init__(self):
         self.state = RubiksCubeState()
         self.face_rotations = {
-            'R': ('x', 1),  # Right face rotates around x-axis
-            'L': ('x', -1),  # Left face rotates around x-axis
-            'U': ('y', 1),  # Up face rotates around y-axis
-            'D': ('y', -1),  # Down face rotates around y-axis
-            'F': ('z', 1),  # Front face rotates around z-axis
-            'B': ('z', -1)  # Back face rotates around z-axis
+            'R': (glm.vec3(1, 0, 0), 1),   # Right face rotates around x-axis
+            'L': (glm.vec3(1, 0, 0), -1),  # Left face rotates around x-axis
+            'U': (glm.vec3(0, 1, 0), 1),   # Up face rotates around y-axis
+            'D': (glm.vec3(0, 1, 0), -1),  # Down face rotates around y-axis
+            'F': (glm.vec3(0, 0, 1), 1),   # Front face rotates around z-axis
+            'B': (glm.vec3(0, 0, 1), -1)   # Back face rotates around z-axis
         }
         # Define rotation axes for each face
         self.rotation_axes = {
@@ -105,9 +147,10 @@ class RubiksCubeController:
     def debug_print_piece(self, piece_index, prefix=""):
         """Helper method to print detailed piece information"""
         piece = self.state.pieces[piece_index]
+        orientation = piece.get_orientation()
         print(f"{prefix}Piece {piece_index}:")
         print(f"  Position: [{piece.current_position[0]:.2f}, {piece.current_position[1]:.2f}, {piece.current_position[2]:.2f}]")
-        print(f"  Rotation: [{piece.rotation[0]:.2f}, {piece.rotation[1]:.2f}, {piece.rotation[2]:.2f}]")
+        print(f"  Rotation: [{glm.degrees(orientation[0]):.2f}, {glm.degrees(orientation[1]):.2f}, {glm.degrees(orientation[2]):.2f}]")
         print(f"  Faces: {piece.faces}")
 
     def debug_print_face(self, face):
@@ -118,62 +161,54 @@ class RubiksCubeController:
             self.debug_print_piece(piece_index, "  ")
 
     def rotate_face(self, face):
-        """Execute a 90-degree clockwise rotation of the specified face"""
+        """Execute a 90-degree rotation of the specified face"""
         print(f"\n=== Starting rotation of face {face} ===")
         print("Before rotation:")
         self.debug_print_face(face)
 
+        # Get pieces to rotate
         pieces_to_rotate = self.get_face_pieces(face)
 
-        # Set rotation direction
-        direction = -1 if face in ['L', 'D', 'B'] else 1
+        # Get rotation axis and direction
+        axis, direction = self.face_rotations[face]
         angle = 90 * direction
 
-        # Create rotation matrix using glm
-        rotation_matrix = glm.mat4(1.0)
-        axis = ""
+        # Create rotation matrix
+        rotation_center = glm.vec3(0.0)
         if face in ['R', 'L']:
-            rotation_matrix = glm.rotate(rotation_matrix, glm.radians(angle), glm.vec3(1, 0, 0))
-            axis = "X"
+            rotation_center.x = self.face_coordinates[face][1]
         elif face in ['U', 'D']:
-            rotation_matrix = glm.rotate(rotation_matrix, glm.radians(angle), glm.vec3(0, 1, 0))
-            axis = "Y"
+            rotation_center.y = self.face_coordinates[face][1]
         elif face in ['F', 'B']:
-            rotation_matrix = glm.rotate(rotation_matrix, glm.radians(angle), glm.vec3(0, 0, 1))
-            axis = "Z"
+            rotation_center.z = self.face_coordinates[face][1]
 
-        print(f"\nApplying {angle}° rotation around {axis} axis")
+        # Create the rotation transformation
+        rotation_mat = glm.mat4(1.0)
+        # First translate to origin
+        rotation_mat = glm.translate(rotation_mat, -rotation_center)
+        # Apply rotation
+        rotation_mat = glm.rotate(rotation_mat, glm.radians(angle), axis)
+        # Translate back
+        rotation_mat = glm.translate(rotation_mat, rotation_center)
+
+        print(f"\nApplying {angle}° rotation around axis {axis.x}, {axis.y}, {axis.z}")
 
         # Apply rotation to each piece
         for piece_index in pieces_to_rotate:
             piece = self.state.pieces[piece_index]
             print(f"\nRotating piece {piece_index}:")
-            print(f"  Before: pos={[f'{x:.2f}' for x in piece.current_position]}, "
-                  f"rot={[f'{x:.2f}' for x in piece.rotation]}")
+            print(f"  Before: pos={[f'{x:.2f}' for x in piece.current_position]}")
 
-            # Convert position to vec4 for matrix multiplication
-            pos = glm.vec4(piece.current_position[0], piece.current_position[1],
-                           piece.current_position[2], 1.0)
+            # Apply the new rotation
+            piece.transform = rotation_mat * piece.transform
 
-            # Apply rotation
-            rotated_pos = rotation_matrix * pos
-            piece.current_position = [rotated_pos.x, rotated_pos.y, rotated_pos.z]
-
-            # Update piece rotation
-            if face in ['R', 'L']:
-                piece.rotation[0] = (piece.rotation[0] + angle) % 360
-            elif face in ['U', 'D']:
-                piece.rotation[1] = (piece.rotation[1] + angle) % 360
-            elif face in ['F', 'B']:
-                piece.rotation[2] = (piece.rotation[2] + angle) % 360
-
-            print(f"  After:  pos={[f'{x:.2f}' for x in piece.current_position]}, "
-                  f"rot={[f'{x:.2f}' for x in piece.rotation]}")
+            print(f"  After:  pos={[f'{x:.2f}' for x in piece.current_position]}")
 
         print("\nAfter rotation:")
         self.debug_print_face(face)
         print("=== Rotation complete ===\n")
 
+        # Update faces for rotated pieces
         for piece_index in pieces_to_rotate:
             self.state.pieces[piece_index].update_faces()
 
@@ -181,16 +216,7 @@ class RubiksCubeController:
 
     def get_face_pieces(self, face):
         """Get all pieces that belong to the specified face"""
-        coords = {
-            'R': (0, 1.1),
-            'L': (0, -1.1),
-            'U': (1, 1.1),
-            'D': (1, -1.1),
-            'F': (2, 1.1),
-            'B': (2, -1.1)
-        }
-
-        axis_index, value = coords[face]
+        axis_index, value = self.face_coordinates[face]
         pieces = []
 
         print(f"\nFinding pieces for face {face}:")
@@ -221,14 +247,7 @@ class RubiksCubeController:
 
     def process_keyboard(self, key):
         """Process keyboard input for face rotations"""
-        face_keys = {
-            'R': 'R',
-            'L': 'L',
-            'U': 'U',
-            'D': 'D',
-            'F': 'F',
-            'B': 'B'
-        }
+        face_keys = {'R': 'R', 'L': 'L', 'U': 'U', 'D': 'D', 'F': 'F', 'B': 'B'}
 
         if key in face_keys:
             print(f"\n=== Processing keyboard input: {key} ===")
