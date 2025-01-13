@@ -1,78 +1,91 @@
 import glm
-import math
+import random
 
-class SmallCube:
-    """
-    Represents one small sub-cube in the Rubik's cube.
-    Stores index, position, orientation, and a 4x4 model matrix.
-    """
-    def __init__(self, index, grid_coords, size=3):
-        self.index = index
-        self.grid_coords = grid_coords  # store (x,y,z) as integers
-        self.size = size
-        self.rotation = glm.vec3(0)
+class SubCube:
+    def __init__(self, idx, x, y, z):
+        self.idx = idx
+        self.grid_x = x
+        self.grid_y = y
+        self.grid_z = z
+
+        # Store orientation separately from translation:
+        self.orientation = glm.mat4(1.0)
+        
         self.model_matrix = glm.mat4(1.0)
-        self._update_position_from_coords()
+        self._update_model_matrix()
 
-    
-    def _update_position_from_coords(self):
-        offset = (self.size - 1)/2.0
-        # Convert integer coords to float position
-        gx, gy, gz = self.grid_coords
-        self.position = glm.vec3(gx - offset, gy - offset, gz - offset)
+    def _update_model_matrix(self):
+        # Combine translation * orientation
+        translate_mat = glm.translate(glm.mat4(1.0),
+                                      glm.vec3(self.grid_x, self.grid_y, self.grid_z))
+        self.model_matrix = translate_mat * self.orientation
 
-        self.update_model_matrix()
+    def update_grid_pos(self, x, y, z):
+        # Update integer grid position after a 90° face turn
+        self.grid_x = x
+        self.grid_y = y
+        self.grid_z = z
+        # Recompute with the same orientation
+        self._update_model_matrix()
 
-
-    def update_model_matrix(self):
-        """
-        For the standard Rubik's assignment, we typically do:
-        model = rot * trans * scale
-        (rot about global center)
-        But you can adapt to your preference.
-        """
-        # Scale
-        scl = glm.scale(glm.mat4(1.0), glm.vec3(1.0))
-
-        # Rotation (apply Z, Y, X in that order, or any order you prefer)
-        # We'll store rotation in degrees but convert to radians for glm.rotate
-        rot_z = glm.rotate(glm.mat4(1.0), glm.radians(self.rotation.z), glm.vec3(0, 0, 1))
-        rot_y = glm.rotate(glm.mat4(1.0), glm.radians(self.rotation.y), glm.vec3(0, 1, 0))
-        rot_x = glm.rotate(glm.mat4(1.0), glm.radians(self.rotation.x), glm.vec3(1, 0, 0))
-        rot = rot_z * rot_y * rot_x
-        
-
-        # Translation
-        trans = glm.translate(glm.mat4(1.0), self.position)
-
-        # # For rotations around object center:
-        # #   model = trans * rot * scl
-        # self.model_matrix =  trans * rot * scl
-        
-        # For rotations around global center:
-        #   model = rot * trans * scl
-        self.model_matrix =  rot * trans * scl
 
 
 class RubiksData:
     """
-    Holds the sub-cubes for a NxNxN Rubik's cube, with N=2..5 or more.
-    By default, N=3 => 27 sub-cubes (or 26 if you skip the internal hidden center).
+    This class holds all the Rubik's sub-cube data and any associated logic
+    for indexing, random mixers, or helper methods to update the geometry data.
     """
     def __init__(self, size=3):
+        """
+        :param size: the Rubik's size, typically 3 for a classic 3x3.
+        """
         self.size = size
         self.sub_cubes = []
-        self._build_cubes()
+        self.solver = None  # Will hold a RubikSolver instance
 
-    def _build_cubes(self):
+        self._build_sub_cubes()
+
+    def _build_sub_cubes(self):
         """
-        Build the NxNxN sub-cubes, each offset from the center so that (0,0,0) is the global center.
-        If size=3, we have indices from 0..26 (27 cubes), or skip the internal if you want exactly 26 visible.
+        Build the sub-cubes for a NxNxN Rubik's cube. 
+        We store them in 'sub_cubes'. 
+        For size=3, we have 3^3 = 27 sub-cubes (including the hidden center if you want).
+        Typically, a 3x3 visible has 26, but often we still track the 27th internal piece 
+        in code. Adapt as you wish.
+        We place them in [-1, 0, 1] in x, y, z for a standard 3x3.
         """
-        index = 0
+        # We'll use a simple index to color pick each sub-cube uniquely:
+        index_counter = 0
+
+        # Example: For size=3 => range(-1, 2) => -1, 0, 1
+        offset = self.size // 2  # 3//2=1, 4//2=2, ...
         for x in range(self.size):
             for y in range(self.size):
                 for z in range(self.size):
-                    new_cube = SmallCube(index, (x,y,z), size=self.size)
-                    self.sub_cubes.append(new_cube)
-                    index += 1
+                    gx = x - offset
+                    gy = y - offset
+                    gz = z - offset
+                    sub = SubCube(index_counter, gx, gy, gz)
+                    self.sub_cubes.append(sub)
+                    index_counter += 1
+
+    def get_sub_cube_by_index(self, idx):
+        """
+        Return the sub-cube with a given picking index.
+        """
+        for sc in self.sub_cubes:
+            if sc.idx == idx:
+                return sc
+        return None
+
+    def random_mixer(self, rubiks_renderer, steps=10):
+        """
+        Randomly rotate faces to scramble the cube.
+        This calls 'rubiks_renderer.rotate_face(...)' with random faces 
+        and random directions (clockwise / not).
+        """
+        faces = ['R', 'L', 'U', 'D', 'F', 'B']
+        for _ in range(steps):
+            face = random.choice(faces)
+            clockwise = random.choice([True, False])
+            rubiks_renderer.rotate_face(face, clockwise)

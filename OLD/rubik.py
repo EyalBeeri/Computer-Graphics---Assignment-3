@@ -1,365 +1,232 @@
+import numpy as np
 import glm
 from OpenGL.GL import *
-import numpy as np
-import time
-
 
 class RubiksCubeRenderer:
     """
-    Manages rendering of the NxNxN Rubik's cube (using a single geometry for each sub-cube),
-    plus logic for rotating faces on keypress, toggling clockwise/counterclockwise, etc.
-    Also includes an animation system for rotating a face over time.
+    Responsible for:
+      - Owning the VAO, VBO for the single-cube geometry.
+      - Drawing the NxNxN sub-cubes from RubiksData.
+      - Handling face rotations (R, L, U, D, F, B) with immediate 90-degree turns.
     """
-
     def __init__(self, rubiks_data, shader_program, texture_id, solver):
-        self.data = rubiks_data  # RubiksData holding sub-cubes
-        self.shader_program = shader_program
+        """
+        :param rubiks_data: RubiksData instance
+        :param shader_program: compiled shader program
+        :param texture_id: loaded texture ID (plane.png)
+        :param solver: RubikSolver instance
+        """
+        self.data = rubiks_data
+        self.shader = shader_program
         self.texture_id = texture_id
+        self.solver = solver
 
-        self.solver = solver  # RubikSolver instance
+        # Rotation info
+        self.rotation_angle = 90.0   # angle for each face rotation
+        self.clockwise = True        # default direction (true=clockwise)
 
-        # Create geometry for a single cube
-        self.VAO = None
-        self.VBO = None
-        self.EBO = None
-        self.vertices = None
-        self.indices = None
+        # Build geometry (VAO, VBO, EBO) for a single cube
         self._create_cube_vao()
-
-        # Rotation control
-        self.clockwise = True
-        self.rotation_angle = 90.0  # can range from 45..180
-        self.half_turned_faces = []  # Will store face name if any face is half-turned
-        self.is_face_half_turned = False  # True if any face is not at a 90-degree position
-
-        # For face-rotation animation
-        self.is_animating = False
-        self.current_face = None
-        self.target_angle = 0.0
-        self.current_angle = 0.0
-        self.animation_speed = 180.0  # degrees per second
-        self.rotating_cubes = []
-
-        self.cube_orientation = glm.mat4(1.0)
 
     def _create_cube_vao(self):
         """
-        Create a full 3D textured-cube geometry (36 vertices or 24+indices).
-        We'll do 36 vertices for simplicity.
+        Prepare a VAO for a single cube, using the given color layout.
+        We'll draw it N^3 times for an NxN Rubik’s.
         """
+        self.vao = glGenVertexArrays(1)
+        self.vbo = glGenBuffers(1)
+        self.ebo = glGenBuffers(1)
+
+        # A single cube has 36 indices => 12 triangles, 3 vertices each.
+        # We have 24 unique vertices (6 faces x 4 corners).
         self.vertices = np.array([
             #   x,    y,    z,   r,   g,   b,  u,  v
-            # Front face (Red)
-            -0.5, -0.5, 0.5, 1, 0, 0, 0, 0,
-            0.5, -0.5, 0.5, 1, 0, 0, 1, 0,
-            0.5, 0.5, 0.5, 1, 0, 0, 1, 1,
-            -0.5, 0.5, 0.5, 1, 0, 0, 0, 1,
+            # Front (red)
+            -0.5, -0.5,  0.5,   1, 0, 0,   0, 0,
+             0.5, -0.5,  0.5,   1, 0, 0,   1, 0,
+             0.5,  0.5,  0.5,   1, 0, 0,   1, 1,
+            -0.5,  0.5,  0.5,   1, 0, 0,   0, 1,
 
-            # Back face (Orange)
-            -0.5, -0.5, -0.5, 1, 0.5, 0, 1, 0,
-            0.5, -0.5, -0.5, 1, 0.5, 0, 0, 0,
-            0.5, 0.5, -0.5, 1, 0.5, 0, 0, 1,
-            -0.5, 0.5, -0.5, 1, 0.5, 0, 1, 1,
+            # Back (green)
+            -0.5, -0.5, -0.5,   0, 1, 0,   1, 0,
+             0.5, -0.5, -0.5,   0, 1, 0,   0, 0,
+             0.5,  0.5, -0.5,   0, 1, 0,   0, 1,
+            -0.5,  0.5, -0.5,   0, 1, 0,   1, 1,
 
-            # Left face (Green)
-            -0.5, -0.5, -0.5, 0, 1, 0, 0, 0,
-            -0.5, -0.5, 0.5, 0, 1, 0, 1, 0,
-            -0.5, 0.5, 0.5, 0, 1, 0, 1, 1,
-            -0.5, 0.5, -0.5, 0, 1, 0, 0, 1,
+            # Left (blue)
+            -0.5, -0.5, -0.5,   0, 0, 1,   0, 0,
+            -0.5, -0.5,  0.5,   0, 0, 1,   1, 0,
+            -0.5,  0.5,  0.5,   0, 0, 1,   1, 1,
+            -0.5,  0.5, -0.5,   0, 0, 1,   0, 1,
 
-            # Right face (Blue)
-            0.5, -0.5, -0.5, 0, 0, 1, 0, 0,
-            0.5, -0.5, 0.5, 0, 0, 1, 1, 0,
-            0.5, 0.5, 0.5, 0, 0, 1, 1, 1,
-            0.5, 0.5, -0.5, 0, 0, 1, 0, 1,
+            # Right (yellow)
+             0.5, -0.5, -0.5,   1, 1, 0,   0, 0,
+             0.5, -0.5,  0.5,   1, 1, 0,   1, 0,
+             0.5,  0.5,  0.5,   1, 1, 0,   1, 1,
+             0.5,  0.5, -0.5,   1, 1, 0,   0, 1,
 
-            # Top face (White)
-            -0.5, 0.5, 0.5, 1, 1, 1, 0, 0,
-            0.5, 0.5, 0.5, 1, 1, 1, 1, 0,
-            0.5, 0.5, -0.5, 1, 1, 1, 1, 1,
-            -0.5, 0.5, -0.5, 1, 1, 1, 0, 1,
+            # Top (white)
+            -0.5,  0.5,  0.5,   1, 1, 1,   0, 0,
+             0.5,  0.5,  0.5,   1, 1, 1,   1, 0,
+             0.5,  0.5, -0.5,   1, 1, 1,   1, 1,
+            -0.5,  0.5, -0.5,   1, 1, 1,   0, 1,
 
-            # Bottom face (Yellow)
-            -0.5, -0.5, 0.5, 1, 1, 0, 0, 0,
-            0.5, -0.5, 0.5, 1, 1, 0, 1, 0,
-            0.5, -0.5, -0.5, 1, 1, 0, 1, 1,
-            -0.5, -0.5, -0.5, 1, 1, 0, 0, 1,
+            # Bottom (magenta)
+            -0.5, -0.5,  0.5,   1, 0, 1,   0, 0,
+             0.5, -0.5,  0.5,   1, 0, 1,   1, 0,
+             0.5, -0.5, -0.5,   1, 0, 1,   1, 1,
+            -0.5, -0.5, -0.5,   1, 0, 1,   0, 1,
         ], dtype=np.float32)
 
         self.indices = np.array([
-            0, 1, 2, 2, 3, 0,  # Front
-            4, 5, 6, 6, 7, 4,  # Back
-            8, 9, 10, 10, 11, 8,  # Left
-            12, 13, 14, 14, 15, 12,  # Right
-            16, 17, 18, 18, 19, 16,  # Top
-            20, 21, 22, 22, 23, 20,  # Bottom
+            0,  1,  2,   2,  3,  0,    # front
+            4,  5,  6,   6,  7,  4,    # back
+            8,  9, 10,  10, 11,  8,    # left
+            12, 13, 14, 14, 15, 12,    # right
+            16, 17, 18, 18, 19, 16,    # top
+            20, 21, 22, 22, 23, 20     # bottom
         ], dtype=np.uint32)
 
-        self.VAO = glGenVertexArrays(1)
-        glBindVertexArray(self.VAO)
+        glBindVertexArray(self.vao)
 
-        self.VBO = glGenBuffers(1)
-        glBindBuffer(GL_ARRAY_BUFFER, self.VBO)
-        glBufferData(GL_ARRAY_BUFFER, self.vertices.nbytes, self.vertices, GL_STATIC_DRAW)
+        # Upload vertex data
+        glBindBuffer(GL_ARRAY_BUFFER, self.vbo)
+        glBufferData(GL_ARRAY_BUFFER,
+                     self.vertices.nbytes,
+                     self.vertices,
+                     GL_STATIC_DRAW)
 
-        self.EBO = glGenBuffers(1)
-        glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, self.EBO)
-        glBufferData(GL_ELEMENT_ARRAY_BUFFER, self.indices.nbytes, self.indices, GL_STATIC_DRAW)
+        # Upload index data
+        glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, self.ebo)
+        glBufferData(GL_ELEMENT_ARRAY_BUFFER,
+                     self.indices.nbytes,
+                     self.indices,
+                     GL_STATIC_DRAW)
 
-        # Position attribute
-        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 8 * self.vertices.itemsize, None)
+        # Configure layout: 3 floats position, 3 floats color, 2 floats UV
+        stride = 8 * self.vertices.itemsize
+        # Position
         glEnableVertexAttribArray(0)
-        # Color attribute
-        glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 8 * self.vertices.itemsize,
-                              ctypes.c_void_p(3 * self.vertices.itemsize))
+        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE,
+                              stride, ctypes.c_void_p(0))
+        # Color
         glEnableVertexAttribArray(1)
-        # TexCoord attribute
-        glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, 8 * self.vertices.itemsize,
-                              ctypes.c_void_p(6 * self.vertices.itemsize))
+        glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE,
+                              stride, ctypes.c_void_p(3 * self.vertices.itemsize))
+        # UV
         glEnableVertexAttribArray(2)
+        glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE,
+                              stride, ctypes.c_void_p(6 * self.vertices.itemsize))
 
         glBindVertexArray(0)
-        
-    def draw(self, view, projection):
+
+    def draw(self, view, proj):
         """
-        Normal rendering pass (u_PickingMode = false).
-        Also handle animation updates if a face is rotating.
+        Draw all sub-cubes. For each sub-cube, compute MVP, upload it, draw.
         """
-        self._update_animation()
+        glUseProgram(self.shader)
 
-        glUseProgram(self.shader_program)
+        # Uniform locations
+        loc_mvp = glGetUniformLocation(self.shader, "u_MVP")
+        loc_color = glGetUniformLocation(self.shader, "u_Color")
+        loc_pick = glGetUniformLocation(self.shader, "u_PickingMode")
+        loc_pick_col = glGetUniformLocation(self.shader, "u_PickingColor")
 
-        # Set picking mode to false
-        picking_loc = glGetUniformLocation(self.shader_program, "u_PickingMode")
-        glUniform1i(picking_loc, 0)
+        # Turn off picking mode for normal draw
+        glUniform1i(loc_pick, 0)
+        # Global color multiplier = white
+        glUniform4f(loc_color, 1.0, 1.0, 1.0, 1.0)
+        # The picking color is ignored in normal rendering
+        glUniform3f(loc_pick_col, 0.0, 0.0, 0.0)
 
-        # Bind texture
         glActiveTexture(GL_TEXTURE0)
         glBindTexture(GL_TEXTURE_2D, self.texture_id)
-        tex_loc = glGetUniformLocation(self.shader_program, "u_Texture")
-        glUniform1i(tex_loc, 0)
 
-        # Color uniform
-        color_loc = glGetUniformLocation(self.shader_program, "u_Color")
-        glUniform4f(color_loc, 1.0, 1.0, 1.0, 1.0)
-
-        for scube in self.data.sub_cubes:
-            model = self.cube_orientation * scube.model_matrix
-            mvp = projection * view * model
-            mvp_loc = glGetUniformLocation(self.shader_program, "u_MVP")
-            glUniformMatrix4fv(mvp_loc, 1, GL_FALSE, glm.value_ptr(mvp))
-
-            glBindVertexArray(self.VAO)
-            glDrawElements(GL_TRIANGLES, len(self.indices), GL_UNSIGNED_INT, None)
-
+        glBindVertexArray(self.vao)
+        for sub_cube in self.data.sub_cubes:
+            model = sub_cube.model_matrix
+            mvp = proj * view * model
+            glUniformMatrix4fv(loc_mvp, 1, GL_FALSE, glm.value_ptr(mvp))
+            glDrawElements(GL_TRIANGLES,
+                           len(self.indices),
+                           GL_UNSIGNED_INT,
+                           ctypes.c_void_p(0))
         glBindVertexArray(0)
-        glUseProgram(0)
 
-    def draw_picking_pass(self):
+    def update_animation(self):
         """
-        Render each sub-cube with a unique color. Depth test still on,
-        but no texture. We set 'u_PickingMode = true'.
+        If we do *immediate* face rotations, we don't need 
+        to animate incrementally. We'll leave this blank 
+        or remove it if we want no partial rotation at all.
         """
-        glUseProgram(self.shader_program)
-
-        picking_loc = glGetUniformLocation(self.shader_program, "u_PickingMode")
-        glUniform1i(picking_loc, 1)
-
-        # We don't use the actual texture for picking, but we must bind something.
-        glActiveTexture(GL_TEXTURE0)
-        glBindTexture(GL_TEXTURE_2D, self.texture_id)
-        tex_loc = glGetUniformLocation(self.shader_program, "u_Texture")
-        glUniform1i(tex_loc, 0)
-
-        for i, scube in enumerate(self.data.sub_cubes):
-            # Unique picking color
-            r = (i & 0x000000FF) / 255.0
-            g = ((i & 0x0000FF00) >> 8) / 255.0
-            b = ((i & 0x00FF0000) >> 16) / 255.0
-            picking_color_loc = glGetUniformLocation(self.shader_program, "u_PickingColor")
-            glUniform3f(picking_color_loc, r, g, b)
-
-            # MVP
-            model = scube.model_matrix
-            # For picking pass, assume some orthographic or the same view/proj as main?
-            # We'll do the same camera transforms for consistency:
-            # Actually set them from global variables if needed.
-            # For simplicity, let's just reuse last known MVP from normal render.
-            # But the assignment demands the same transformations, so do it externally.
-
-            # If we haven't stored the MVP externally, either store or pass it in.
-            # For an example, let's do identity MVP just so each sub-cube is in place 
-            # (but that won't reflect camera perspective. Typically you want same camera.)
-            # We'll rely on main to call us immediately after a real camera pass 
-            # with identical transforms. 
-            # => We'll pass a global or do a quick hack with glUniformMatrix4fv as identity.
-
-            # We'll set them to identity if we haven't stored camera. 
-            identity = glm.mat4(1.0)
-            # But we do need the real model transform:
-            mvp = identity * model
-            mvp_loc = glGetUniformLocation(self.shader_program, "u_MVP")
-            glUniformMatrix4fv(mvp_loc, 1, GL_FALSE, glm.value_ptr(mvp))
-
-            glBindVertexArray(self.VAO)
-            glDrawElements(GL_TRIANGLES, len(self.indices), GL_UNSIGNED_INT, None)
-
-        glBindVertexArray(0)
-        glUseProgram(0)
-
-    ### Face Rotation Logic ###
-    def can_rotate_face(self, new_face):
-        """
-        Check if it's valid to rotate the requested face given current cube state.
-        Takes into account half-turned faces.
-        """
-        # If no face is half-turned, all rotations are allowed
-        if not self.is_face_half_turned:
-            return True
-
-        if new_face == 'R' and 'L' not in self.half_turned_faces and 'R' not in self.half_turned_faces:
-            return False
-        elif new_face == 'L' and 'R' not in self.half_turned_faces and 'L' not in self.half_turned_faces:
-            return False
-        elif new_face == 'U' and 'D' not in self.half_turned_faces and 'U' not in self.half_turned_faces:
-            return False
-        elif new_face == 'D' and 'U' not in self.half_turned_faces and 'D' not in self.half_turned_faces:
-            return False
-        elif new_face == 'F' and 'B' not in self.half_turned_faces and 'F' not in self.half_turned_faces:
-            return False
-        elif new_face == 'B' and 'F' not in self.half_turned_faces and 'B' not in self.half_turned_faces:
-            return False
-        else:
-            return True
+        pass
 
     def rotate_face(self, face, clockwise):
         """
-        Called upon a key press (R, L, U, D, F, B).
-        Checks if rotation is allowed before starting animation.
+        Called from the key callback (R, L, U, D, F, B).
+        Here we do an immediate 90° rotation. 
+        That means we call _do_face_rotation(..., ±90°) once.
         """
-        if self.is_animating:
-            print("Already animating a face. Wait until done.")
-            return
+        angle_degs = self.rotation_angle if clockwise else -self.rotation_angle
+        self._do_face_rotation(face, angle_degs)
 
-        if not self.can_rotate_face(face):
-            print(f"Cannot rotate face {face} while face is in {self.half_turned_faces} and half-turned")
-            return
+    def _do_face_rotation(self, face, angle_degrees):
+        """
+        Actually rotate the sub-cubes that belong to the given face by ±90°.
+        Then reassign their (x,y,z) grid positions so the Rubik's doesn't break.
+        """
+        # Identify the axis of rotation and which coordinate = +1 / -1
+        axis = glm.vec3(0, 0, 0)
+        face_coord = 1
 
-        self.current_face = face
-        self.clockwise = clockwise
-        self.target_angle = self.rotation_angle
-        self.current_angle = 0.0
-        self.rotating_cubes = self._get_subcubes_for_face(face)
-        self.is_animating = True
-        print(f"Starting rotation for face={face}, clockwise={clockwise} by {self.rotation_angle} deg.")
-
-    def _get_subcubes_for_face(self, face):
-        offset = self.data.size - 1
-        if face == 'R':
-            return [scube for scube in self.data.sub_cubes if scube.grid_coords[0] == offset]
-        elif face == 'L':
-            return [scube for scube in self.data.sub_cubes if scube.grid_coords[0] == 0]
-        elif face == 'U':
-            return [scube for scube in self.data.sub_cubes if scube.grid_coords[1] == offset]
-        elif face == 'D':
-            return [scube for scube in self.data.sub_cubes if scube.grid_coords[1] == 0]
-        elif face == 'F':
-            return [scube for scube in self.data.sub_cubes if scube.grid_coords[2] == offset]
-        elif face == 'B':
-            return [scube for scube in self.data.sub_cubes if scube.grid_coords[2] == 0]
+        if face == 'R':     # Right face => x=+1
+            axis = glm.vec3(1, 0, 0)  
+            face_coord = 1
+        elif face == 'L':   # Left face => x=-1
+            axis = glm.vec3(1, 0, 0)
+            face_coord = -1
+        elif face == 'U':   # Up face => y=+1
+            axis = glm.vec3(0, 1, 0)
+            face_coord = 1
+        elif face == 'D':   # Down face => y=-1
+            axis = glm.vec3(0, 1, 0)
+            face_coord = -1
+        elif face == 'F':   # Front face => z=+1
+            axis = glm.vec3(0, 0, 1)
+            face_coord = 1
+        elif face == 'B':   # Back face => z=-1
+            axis = glm.vec3(0, 0, 1)
+            face_coord = -1
         else:
-            raise ValueError(f"Unknown face: {face}")
-        
+            return  # Unknown face
 
-    def describe_cube(self, cube):
-        """
-        Describe the cube's position and color.
-        """
-        coords = cube.grid_coords
-        position = cube.position
-        rotation = cube.rotation
-        return f"Cube index: {cube.index}, Coords: {coords}, Position: {position}, Rotation: {rotation}"
+        # Gather the sub-cubes on the requested face:
+        cubes_on_face = []
+        for sc in self.data.sub_cubes:
+            if face in ['R','L'] and sc.grid_x == face_coord:
+                cubes_on_face.append(sc)
+            elif face in ['U','D'] and sc.grid_y == face_coord:
+                cubes_on_face.append(sc)
+            elif face in ['F','B'] and sc.grid_z == face_coord:
+                cubes_on_face.append(sc)
 
-    def _update_animation(self):
-        """
-        Update rotation animation for the currently rotating face.
-        """
-        if not self.is_animating:
-            return
+        # We'll rotate them by angle_degrees around the origin. 
+        # (We placed sub-cubes in [-1,0,1] for each axis, so the origin is the center of the cube.)
+        angle_rad = glm.radians(angle_degrees)
+        rot_mat = glm.rotate(glm.mat4(1.0), angle_rad, axis)
 
-        dt = 1.0 / 60.0
-        step = self.animation_speed * dt
+        for sc in cubes_on_face:
+            # 1) Update orientation
+            sc.orientation = rot_mat * sc.orientation
+            
+            # 2) If it's exactly ±90°, finalize new integer grid coords
+            if abs(angle_degrees) == 90.0:
+                old_pos = glm.vec4(sc.grid_x, sc.grid_y, sc.grid_z, 1.0)
+                new_pos = rot_mat * old_pos
+                rx = round(new_pos.x)
+                ry = round(new_pos.y)
+                rz = round(new_pos.z)
+                sc.update_grid_pos(rx, ry, rz)
+            else:
+                sc._update_model_matrix()   # partial rotations, if you wanted them
 
-        # Increment the current angle and check for completion
-        self.current_angle += step
-        if self.current_angle >= self.target_angle:
-            self.current_angle = self.target_angle
-            self.is_animating = False
-
-        # Calculate rotation angle
-        angle_deg = step if self.clockwise else -step
-        axis, pivot = self._get_face_axis_and_pivot(self.current_face)
-
-        rotation_matrix = glm.rotate(glm.mat4(1.0), glm.radians(angle_deg), axis)
-
-        for scube in self.rotating_cubes:
-            relative_position = scube.position - pivot
-            rotated_position = glm.vec3(rotation_matrix * glm.vec4(relative_position, 1.0))
-            scube.position = rotated_position + pivot
-
-            scube.rotation += angle_deg * axis
-            scube.update_model_matrix()
-
-        # Snap cubes to the grid after the animation completes
-        if not self.is_animating:
-            self._snap_cubes_to_grid()
-        
-    
-    def _rotate_grid_coordinates(self, coords, axis, clockwise):
-        """
-        Rotate grid coordinates around the given axis by 90 degrees.
-        """
-        offset = (self.data.size - 1) / 2.0
-        position = glm.vec3(coords[0] - offset, coords[1] - offset, coords[2] - offset)
-
-        rotation_matrix = glm.mat4(1.0)
-        angle = glm.radians(-90 if clockwise else 90)
-        rotation_matrix = glm.rotate(rotation_matrix, angle, axis)
-
-        rotated_position = glm.vec3(rotation_matrix * glm.vec4(position, 1.0))
-        return (
-            round(rotated_position.x + offset),
-            round(rotated_position.y + offset),
-            round(rotated_position.z + offset),
-        )
-
-
-    def _snap_cubes_to_grid(self):
-        """
-        Snap rotating cubes to their new grid positions after animation.
-        """
-        axis, pivot = self._get_face_axis_and_pivot(self.current_face)
-
-        for scube in self.rotating_cubes:
-            scube.grid_coords = self._rotate_grid_coordinates(scube.grid_coords, axis, self.clockwise)
-            scube._update_position_from_coords()
-
-    def _get_face_axis_and_pivot(self, face):
-        """
-        Returns the axis and pivot point for rotating a given face.
-        """
-        offset = (self.data.size - 1) / 2.0
-        if face == 'R':
-            return glm.vec3(1, 0, 0), glm.vec3(offset, 0, 0)
-        elif face == 'L':
-            return glm.vec3(-1, 0, 0), glm.vec3(-offset, 0, 0)
-        elif face == 'U':
-            return glm.vec3(0, 1, 0), glm.vec3(0, offset, 0)
-        elif face == 'D':
-            return glm.vec3(0, -1, 0), glm.vec3(0, -offset, 0)
-        elif face == 'F':
-            return glm.vec3(0, 0, 1), glm.vec3(0, 0, offset)
-        elif face == 'B':
-            return glm.vec3(0, 0, -1), glm.vec3(0, 0, -offset)
-        else:
-            raise ValueError(f"Invalid face: {face}")

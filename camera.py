@@ -1,6 +1,5 @@
 import glm
 import glfw
-import math
 
 class Camera:
     """
@@ -30,13 +29,11 @@ class Camera:
         self.last_mouse_y = 0.0
 
     def get_view_matrix(self):
-        """
-        Return the view matrix, clamping pitch to avoid flipping.
-        """
+        # Convert degrees to radians
         yaw_rad = glm.radians(self.yaw)
         pitch_rad = glm.radians(self.pitch)
 
-        # Clamp pitch values
+        # Clamp pitch
         self.pitch = max(-89.9, min(89.9, self.pitch))
 
         x = self.radius * glm.cos(pitch_rad) * glm.sin(yaw_rad)
@@ -48,7 +45,6 @@ class Camera:
         up = glm.vec3(0.0, 1.0, 0.0)
         return glm.lookAt(eye, center, up)
 
-
     def get_perspective_matrix(self):
         aspect = self.width / float(self.height)
         return glm.perspective(glm.radians(self.fov), aspect, self.near, self.far)
@@ -59,17 +55,16 @@ class Camera:
         self.last_mouse_x = x
         self.last_mouse_y = y
 
-        # Left button = orbit
+        # Left => orbit
         if glfw.get_mouse_button(window, glfw.MOUSE_BUTTON_LEFT) == glfw.PRESS:
             self.yaw   += dx * 0.3
             self.pitch -= dy * 0.3
-        # Right button = pan
+        # Right => pan
         elif glfw.get_mouse_button(window, glfw.MOUSE_BUTTON_RIGHT) == glfw.PRESS:
             self.panX += dx * 0.01
             self.panY -= dy * 0.01
 
     def process_scroll(self, yoffset):
-        # Zoom in/out by changing radius
         self.radius -= yoffset
         if self.radius < 2.0:
             self.radius = 2.0

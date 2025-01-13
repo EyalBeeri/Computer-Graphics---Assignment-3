@@ -375,5 +375,71 @@ def main():
     glfw.terminate()
 
 
+
+def main():
+    global camera, picking_manager, rubiks_renderer
+
+    if not glfw.init():
+        print("Failed to init GLFW")
+        return
+
+    window = glfw.create_window(WIN_WIDTH, WIN_HEIGHT, "Rubik's Cube - Fixed", None, None)
+    if not window:
+        glfw.terminate()
+        return
+
+    glfw.make_context_current(window)
+
+    # Callbacks
+    glfw.set_mouse_button_callback(window, mouse_button_callback)
+    glfw.set_cursor_pos_callback(window, cursor_position_callback)
+    glfw.set_scroll_callback(window, scroll_callback)
+    glfw.set_key_callback(window, key_callback)
+
+    camera = Camera(WIN_WIDTH, WIN_HEIGHT)
+
+    # Compile shaders
+    shader_prog = create_shader_program(
+        os.path.join("shaders", "basic.vert"),
+        os.path.join("shaders", "basic.frag")
+    )
+
+    # Load texture
+    texture_id = load_texture(os.path.join("textures", "plane.png"))
+
+    glEnable(GL_DEPTH_TEST)
+
+    # Build data (3x3)
+    rubiks_data = RubiksData(size=3)
+
+    # Create solver
+    solver = RubikSolver()
+    rubiks_data.solver = solver  # store solver inside rubiks_data
+
+    # Create the renderer
+    rubiks_renderer = RubiksCubeRenderer(rubiks_data, shader_prog, texture_id, solver)
+
+    # Create picking manager
+    picking_manager = ColorPickingManager(rubiks_renderer)
+
+    while not glfw.window_should_close(window):
+        glViewport(0, 0, WIN_WIDTH, WIN_HEIGHT)
+        glClearColor(0.0, 0.0, 0.0, 1.0)
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
+
+        # Update any face animations in progress
+        rubiks_renderer.update_animation()
+
+        view = camera.get_view_matrix()
+        proj = camera.get_perspective_matrix()
+
+        rubiks_renderer.draw(view, proj)
+
+        glfw.swap_buffers(window)
+        glfw.poll_events()
+
+    glfw.terminate()
+
+
 if __name__ == "__main__":
     main()
