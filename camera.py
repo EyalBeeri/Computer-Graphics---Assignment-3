@@ -30,15 +30,14 @@ class Camera:
         self.last_mouse_y = 0.0
 
     def get_view_matrix(self):
-        # Convert yaw/pitch/radius to cartesian
-        yaw_rad   = glm.radians(self.yaw)
+        """
+        Return the view matrix, clamping pitch to avoid flipping.
+        """
+        yaw_rad = glm.radians(self.yaw)
         pitch_rad = glm.radians(self.pitch)
 
-        # Limit pitch so you don't go upside down
-        if self.pitch > 89.9:  
-            self.pitch = 89.9
-        if self.pitch < -89.9:
-            self.pitch = -89.9
+        # Clamp pitch values
+        self.pitch = max(-89.9, min(89.9, self.pitch))
 
         x = self.radius * glm.cos(pitch_rad) * glm.sin(yaw_rad)
         y = self.radius * glm.sin(pitch_rad)
@@ -48,6 +47,7 @@ class Camera:
         center = glm.vec3(self.panX, self.panY, 0.0)
         up = glm.vec3(0.0, 1.0, 0.0)
         return glm.lookAt(eye, center, up)
+
 
     def get_perspective_matrix(self):
         aspect = self.width / float(self.height)
