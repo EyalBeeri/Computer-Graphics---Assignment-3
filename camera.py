@@ -7,7 +7,7 @@ class Camera:
     Camera with perspective, rotating around the origin (Rubik's center).
     Handles input for rotation (via mouse), zoom (scroll), and panning (right drag).
     """
-    def _init_(self, width, height):
+    def __init__(self, width, height):
         self.width = width
         self.height = height
 
@@ -74,4 +74,4 @@ class Camera:
         if self.radius < 2.0:
             self.radius = 2.0
         if self.radius > 40.0:
-            self.radius = 40.0
+            self.radius = 40.0
