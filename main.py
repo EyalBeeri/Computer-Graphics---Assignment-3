@@ -377,10 +377,7 @@ def main():
 
 
 def main():
-    global camera, picking_manager, rubiks_renderer
-
     if not glfw.init():
-        print("Failed to init GLFW")
         return
 
     window = glfw.create_window(WIN_WIDTH, WIN_HEIGHT, "Rubik's Cube - Fixed", None, None)
@@ -390,9 +387,175 @@ def main():
 
     glfw.make_context_current(window)
 
-    # Callbacks
-    glfw.set_mouse_button_callback(window, mouse_button_callback)
-    glfw.set_cursor_pos_callback(window, cursor_position_callback)
+    cube = RubiksCube(800, 600)
+    cube.init_gl()
+
+    def mouse_callback(window, xpos, ypos):
+        cube.camera.process_mouse_motion(window, xpos, ypos)
+        
+    def mouse_button_callback(window, button, action, mods):
+        if action == glfw.PRESS and cube.picking_mode:
+            # 1) Clear color + depth
+            glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
+            
+            # Temporarily enable picking mode in the shader
+            glUseProgram(cube.shader)
+            glUniform1i(glGetUniformLocation(cube.shader, "u_PickingMode"), 1)
+
+            # 2) Draw each piece with a unique color
+            # For example, set color = (index+1)/255 in R channel. 
+            # (For bigger cubes, you can do a fancier mapping.)
+            for i, piece in enumerate(cube.cube_controller.state.pieces.values()):
+                # i goes from 0..N-1, so picking color can be:
+                r = (i+1)/255.0
+                g = 0.0
+                b = 0.0
+
+                # Send picking color
+                glUniform3f(glGetUniformLocation(cube.shader, "u_PickingColor"), r, g, b)
+
+                # Compute MVP, send it, bind VAO, draw...
+                model = piece.transform
+                view = cube.camera.get_view_matrix()
+                projection = cube.camera.get_perspective_matrix()
+                mvp = projection * view * model
+
+                glUniformMatrix4fv(glGetUniformLocation(cube.shader, "u_MVP"),
+                                1, GL_FALSE,
+                                glm.value_ptr(mvp))
+                glBindVertexArray(cube.vao)
+                glDrawElements(GL_TRIANGLES, len(cube.indices), GL_UNSIGNED_INT, None)
+
+            # Force finish
+            glFlush()
+            glFinish()
+
+            # 3) Use glReadPixels to read the color at mouse pos
+            x, y = glfw.get_cursor_pos(window)
+            # Note: The window's origin is top-left or bottom-left?
+            # In many cases, OpenGL expects bottom-left, while your window coords are top-left.
+            # If so, do: real_y = window_height - y
+            real_y = cube.camera.height - int(y) - 1
+            pixel_data = glReadPixels(int(x), int(real_y), 1, 1, GL_RGB, GL_FLOAT)
+
+            picked_r = pixel_data[0][0][0]  # because pixel_data is [height][width][channel]
+            picked_g = pixel_data[0][0][1]
+            picked_b = pixel_data[0][0][2]
+
+            # Convert back to index
+            # If we only stored index in R channel:
+            selected_id = int(round(picked_r * 255.0)) - 1
+
+            # 4) Now read depth
+            depth_data = glReadPixels(int(x), int(real_y), 1, 1, GL_DEPTH_COMPONENT, GL_FLOAT)
+            picked_depth = depth_data[0][0]
+
+            # 5) Store them
+            cube.selected_cube_id = selected_id if (selected_id >= 0) else -1
+            cube.selected_depth   = picked_depth
+            print("Picked cube =", cube.selected_cube_id, " depth=", cube.selected_depth)
+
+            # Done picking => turn off picking mode in the shader
+            glUniform1i(glGetUniformLocation(cube.shader, "u_PickingMode"), 0)
+            
+    def cursor_pos_callback(window, xpos, ypos):
+		# If no piece selected, do normal camera controls or nothing
+        if cube.selected_cube_id < 0:
+            # Maybe your existing camera logic
+            cube.camera.process_mouse_motion(window, xpos, ypos)
+            return
+
+        # If right button is pressed => translate
+        if glfw.get_mouse_button(window, glfw.MOUSE_BUTTON_RIGHT) == glfw.PRESS:
+            # We want the piece to remain under the mouse.
+            # We can "unproject" (xpos, ypos, selected_depth) from screen to world space.
+
+            real_y = cube.camera.height - int(ypos) - 1
+            # Read depth? We already have the depth in self.selected_depth if we assume the piece's depth 
+            # doesn't change. But if the user wants continuous re-check, you can do another glReadPixels.
+
+            # Or just use the stored selected_depth
+            ndc_x = (2.0 * xpos) / cube.camera.width - 1.0
+            ndc_y = (2.0 * real_y) / cube.camera.height - 1.0
+            ndc_z = 2.0 * cube.selected_depth - 1.0
+
+            clip_coords = glm.vec4(ndc_x, ndc_y, ndc_z, 1.0)
+            inv_mvp = glm.inverse(cube.camera.get_perspective_matrix() * cube.camera.get_view_matrix())
+            world_coords = inv_mvp * clip_coords
+            world_coords /= world_coords.w
+
+            # Now we have the "world space" position that is under the mouse.
+            # Move the center of the cube to that position (or do relative deltas).
+            piece = cube.cube_controller.state.pieces[cube.selected_cube_id]
+            # We'll do a quick hack: place the piece's transform so its origin is at that world_coords
+            # Possibly you'd track an offset so the cube doesn't jump.
+            # For a simple approach, just do:
+            piece_center_local = glm.vec3( piece.current_position ) 
+            new_center = glm.vec3(world_coords.x, world_coords.y, world_coords.z)
+            translation_delta = new_center - piece_center_local
+
+            # Update transform
+            piece.transform = glm.translate(piece.transform, translation_delta)
+
+        # If left button is pressed => rotate (e.g. around camera’s up or something)
+        elif glfw.get_mouse_button(window, glfw.MOUSE_BUTTON_LEFT) == glfw.PRESS:
+            # Suppose you do a simple rotation around the camera’s up vector or something
+            dx = xpos - cube.camera.last_mouse_x
+            # negative = clockwise vs. counterclockwise, up to you
+            angle = dx * 0.01  # tune the factor
+            rotation_axis = glm.vec3(0,1,0)  # or incorporate camera orientation
+            rotation_mat = glm.rotate(glm.mat4(1.0), angle, rotation_axis)
+
+            piece = cube.cube_controller.state.pieces[cube.selected_cube_id]
+            # apply rotation around piece center
+            # 1) translate to origin
+            center = glm.vec3(piece.current_position)
+            piece.transform = glm.translate(piece.transform, -center)
+            # 2) rotate
+            piece.transform = rotation_mat * piece.transform
+            # 3) translate back
+            piece.transform = glm.translate(piece.transform, center)
+
+        # Update last mouse pos
+        cube.camera.last_mouse_x = xpos
+        cube.camera.last_mouse_y = ypos
+
+
+
+    def scroll_callback(window, xoffset, yoffset):
+        cube.camera.process_scroll(yoffset)
+
+    def key_callback(window, key, scancode, action, mods):
+        if action == glfw.PRESS:
+            if key == glfw.KEY_P:
+                cube.picking_mode = not cube.picking_mode
+                if not cube.picking_mode:
+                    # Reset selection when picking mode is disabled
+                    cube.selected_cube_id = -1
+                    cube.selected_depth = None
+                    print("Picking mode disabled: Deselected cube")
+                else:
+                    print("Picking mode enabled")
+            elif key == glfw.KEY_R:
+                cube.cube_controller.process_keyboard('R')
+            elif key == glfw.KEY_L:
+                cube.cube_controller.process_keyboard('L')
+            elif key == glfw.KEY_U:
+                cube.cube_controller.process_keyboard('U')
+            elif key == glfw.KEY_D:
+                cube.cube_controller.process_keyboard('D')
+            elif key == glfw.KEY_F:
+                cube.cube_controller.process_keyboard('F')
+            elif key == glfw.KEY_B:
+                cube.cube_controller.process_keyboard('B')
+            elif key == glfw.KEY_SPACE:
+                cube.cube_controller.process_keyboard('SPACE')
+            elif key == glfw.KEY_A:
+                cube.cube_controller.process_keyboard('A')
+            elif key == glfw.KEY_Z:
+                cube.cube_controller.process_keyboard('Z')
+
+    glfw.set_cursor_pos_callback(window, mouse_callback)
     glfw.set_scroll_callback(window, scroll_callback)
     glfw.set_key_callback(window, key_callback)
 
@@ -437,6 +600,7 @@ def main():
 
         glfw.swap_buffers(window)
         glfw.poll_events()
+
 
     glfw.terminate()
 
