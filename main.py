@@ -289,16 +289,17 @@ def main():
 
             # Now we have the "world space" position that is under the mouse.
             # Move the center of the cube to that position (or do relative deltas).
-            piece = cube.cube_controller.state.pieces[cube.selected_cube_id]
-            # We'll do a quick hack: place the piece's transform so its origin is at that world_coords
-            # Possibly you'd track an offset so the cube doesn't jump.
-            # For a simple approach, just do:
-            piece_center_local = glm.vec3( piece.current_position ) 
-            new_center = glm.vec3(world_coords.x, world_coords.y, world_coords.z)
-            translation_delta = new_center - piece_center_local
+            if cube.selected_cube_id != 50:
+                piece = cube.cube_controller.state.pieces[cube.selected_cube_id]
+                # We'll do a quick hack: place the piece's transform so its origin is at that world_coords
+                # Possibly you'd track an offset so the cube doesn't jump.
+                # For a simple approach, just do:
+                piece_center_local = glm.vec3( piece.current_position )
+                new_center = glm.vec3(world_coords.x, world_coords.y, world_coords.z)
+                translation_delta = new_center - piece_center_local
 
-            # Update transform
-            piece.transform = glm.translate(piece.transform, translation_delta)
+                # Update transform
+                piece.transform = glm.translate(piece.transform, translation_delta)
 
         # If left button is pressed => rotate (e.g. around camera’s up or something)
         elif glfw.get_mouse_button(window, glfw.MOUSE_BUTTON_LEFT) == glfw.PRESS:
@@ -309,15 +310,16 @@ def main():
             rotation_axis = glm.vec3(0,1,0)  # or incorporate camera orientation
             rotation_mat = glm.rotate(glm.mat4(1.0), angle, rotation_axis)
 
-            piece = cube.cube_controller.state.pieces[cube.selected_cube_id]
-            # apply rotation around piece center
-            # 1) translate to origin
-            center = glm.vec3(piece.current_position)
-            piece.transform = glm.translate(piece.transform, -center)
-            # 2) rotate
-            piece.transform = rotation_mat * piece.transform
-            # 3) translate back
-            piece.transform = glm.translate(piece.transform, center)
+            if cube.selected_cube_id != 50:
+                piece = cube.cube_controller.state.pieces[cube.selected_cube_id]
+                # apply rotation around piece center
+                # 1) translate to origin
+                center = glm.vec3(piece.current_position)
+                piece.transform = glm.translate(piece.transform, -center)
+                # 2) rotate
+                piece.transform = rotation_mat * piece.transform
+                # 3) translate back
+                piece.transform = glm.translate(piece.transform, center)
 
         # Update last mouse pos
         cube.camera.last_mouse_x = xpos
