@@ -191,7 +191,7 @@ def main():
 
     glfw.make_context_current(window)
 
-    cube = RubiksCube(width=800, height=600, N=4)
+    cube = RubiksCube(width=800, height=600, N=5)
     cube.init_gl()
 
     def mouse_callback(window, xpos, ypos):

@@ -167,6 +167,7 @@ class RubiksCubeController:
         # Add rotation angle state
         self.direction = 1
         self.angle = 90
+        self.half_rotated_faces= []
 
         # Update face rotations dictionary to use the current_rotation_angle
         self.face_rotations = {
@@ -220,6 +221,31 @@ class RubiksCubeController:
         for piece_index in pieces:
             self.debug_print_piece(piece_index, "  ")
 
+    def can_rotate_face(self, face):
+        """Check if the given face can be rotated based on current half-rotated state."""
+        if not self.half_rotated_faces:
+            return True  # No restrictions if no face is half-rotated
+
+        # If the requested face is already half-rotated, allow rotation
+        if face in self.half_rotated_faces:
+            return True
+
+        # Only allow rotation of directly related faces
+        if 'R' in self.half_rotated_faces and face == 'L':
+            return True
+        if 'L' in self.half_rotated_faces and face == 'R':
+            return True
+        if 'U' in self.half_rotated_faces and face == 'D':
+            return True
+        if 'D' in self.half_rotated_faces and face == 'U':
+            return True
+        if 'F' in self.half_rotated_faces and face == 'B':
+            return True
+        if 'B' in self.half_rotated_faces and face == 'F':
+            return True
+
+        return False  # Block rotation for other faces
+
     def rotate_face(self, face):
         """Execute a 90-degree rotation of the specified face"""
         print(f"\n=== Starting rotation of face {face} ===")
@@ -230,6 +256,9 @@ class RubiksCubeController:
         pieces_to_rotate = self.get_face_pieces(face)
         curr_direction = self.direction
         curr_angle = self.angle
+        if not self.can_rotate_face(face):
+            print("Cannot rotate face due to blocking")
+            return
         # Get rotation axis and direction
         axis = self.face_rotations[face]
         angle = curr_angle * -curr_direction
@@ -272,6 +301,12 @@ class RubiksCubeController:
         # Update faces for rotated pieces
         for piece_index in pieces_to_rotate:
             self.state.pieces[piece_index].update_faces()
+
+        if curr_angle == 45:
+            if face in self.half_rotated_faces:
+                self.half_rotated_faces.remove(face)
+            else:
+                self.half_rotated_faces.append(face)
 
         return True
 
