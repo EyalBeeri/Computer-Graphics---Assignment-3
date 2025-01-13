@@ -208,6 +208,12 @@ def main():
                 cube.cube_controller.process_keyboard('F')
             elif key == glfw.KEY_B:
                 cube.cube_controller.process_keyboard('B')
+            elif key == glfw.KEY_SPACE:
+                cube.cube_controller.process_keyboard('SPACE')
+            elif key == glfw.KEY_A:
+                cube.cube_controller.process_keyboard('A')
+            elif key == glfw.KEY_Z:
+                cube.cube_controller.process_keyboard('Z')
 
     glfw.set_cursor_pos_callback(window, mouse_callback)
     glfw.set_scroll_callback(window, scroll_callback)

@@ -117,15 +117,23 @@ class RubiksCubeState:
 class RubiksCubeController:
     def __init__(self):
         self.state = RubiksCubeState()
+        # Add rotation angle state
+        self.direction = 1
+        self.angle = 90
+
+        # Update face rotations dictionary to use the current_rotation_angle
         self.face_rotations = {
-            'R': (glm.vec3(1, 0, 0), 1),   # Right face rotates around x-axis
-            'L': (glm.vec3(1, 0, 0), -1),  # Left face rotates around x-axis
-            'U': (glm.vec3(0, 1, 0), 1),   # Up face rotates around y-axis
-            'D': (glm.vec3(0, 1, 0), -1),  # Down face rotates around y-axis
-            'F': (glm.vec3(0, 0, 1), 1),   # Front face rotates around z-axis
-            'B': (glm.vec3(0, 0, 1), -1)   # Back face rotates around z-axis
+            'R': glm.vec3(1, 0, 0),  # Right face rotates around x-axis
+            'L': glm.vec3(1, 0, 0),  # Left face rotates around x-axis
+            'U': glm.vec3(0, 1, 0),  # Up face rotates around y-axis
+            'D': glm.vec3(0, 1, 0),  # Down face rotates around y-axis
+            'F': glm.vec3(0, 0, 1),  # Front face rotates around z-axis
+            'B': glm.vec3(0, 0, 1),  # Back face rotates around z-axis
+            'A': 180,  # 180-degree rotation
+            'Z': 45  # 45-degree rotation
         }
-        # Define rotation axes for each face
+
+        # Rest of the initialization remains the same
         self.rotation_axes = {
             'R': glm.vec3(1, 0, 0),
             'L': glm.vec3(1, 0, 0),
@@ -134,16 +142,21 @@ class RubiksCubeController:
             'F': glm.vec3(0, 0, 1),
             'B': glm.vec3(0, 0, 1)
         }
-        # Define which coordinate to check for each face
+
         self.face_coordinates = {
-            'R': (0, 1.1),    # x = 1.1
-            'L': (0, -1.1),   # x = -1.1
-            'U': (1, 1.1),    # y = 1.1
-            'D': (1, -1.1),   # y = -1.1
-            'F': (2, 1.1),    # z = 1.1
-            'B': (2, -1.1)    # z = -1.1
+            'R': (0, 1.1),  # x = 1.1
+            'L': (0, -1.1),  # x = -1.1
+            'U': (1, 1.1),  # y = 1.1
+            'D': (1, -1.1),  # y = -1.1
+            'F': (2, 1.1),  # z = 1.1
+            'B': (2, -1.1)  # z = -1.1
         }
 
+    def toggle_direction(self):
+        if self.direction == 1:
+            self.direction = -1
+        else:
+            self.direction = 1
     def debug_print_piece(self, piece_index, prefix=""):
         """Helper method to print detailed piece information"""
         piece = self.state.pieces[piece_index]
@@ -168,10 +181,11 @@ class RubiksCubeController:
 
         # Get pieces to rotate
         pieces_to_rotate = self.get_face_pieces(face)
-
+        curr_direction = self.direction
+        curr_angle = self.angle
         # Get rotation axis and direction
-        axis, direction = self.face_rotations[face]
-        angle = 90 * direction
+        axis = self.face_rotations[face]
+        angle = curr_angle * -curr_direction
 
         # Create rotation matrix
         rotation_center = glm.vec3(0.0)
@@ -249,10 +263,32 @@ class RubiksCubeController:
         """Process keyboard input for face rotations"""
         face_keys = {'R': 'R', 'L': 'L', 'U': 'U', 'D': 'D', 'F': 'F', 'B': 'B'}
 
-        if key in face_keys:
+        if key == 'SPACE':
+            self.toggle_direction()
+
+
+        elif key == 'A':
+            if self.angle == 45:
+                self.angle = 90
+            elif self.angle == 90:
+                self.angle = 180
+            elif self.angle == 180:
+                return
+
+        elif key == 'Z':
+            if self.angle == 45:
+                return
+            elif self.angle == 90:
+                self.angle = 45
+            elif self.angle == 180:
+                self.angle = 90
+
+        elif key in face_keys:
             print(f"\n=== Processing keyboard input: {key} ===")
+            self.last_face = face_keys[key]  # Store the last face rotated
             result = self.rotate_face(face_keys[key])
             print(f"=== Keyboard processing complete: {key} ===\n")
             return result
+
         return False
 
