@@ -1,7 +1,7 @@
 import math
 import numpy as np
 import glm
-
+from const import STEP_SIZE
 
 class CubePiece:
     def __init__(self, position, index, N=3):
@@ -45,16 +45,16 @@ class CubePiece:
     def _determine_faces(self):
         """
         For an N×N cube, compute which outer faces this piece belongs to.
-        For example, for a 3×3 cube, the outer layers have coordinates ±(1.1).
-        For a 4×4 cube, ±(1.5*1.1), etc.
+        For example, for a 3×3 cube, the outer layers have coordinates ±(step_size).
+        For a 4×4 cube, ±(1.5*step_size), etc.
         """
         faces = []
         # The offset is how many steps you go from 0 to reach the outermost layer.
         # For N=3, offset=1; for N=4, offset=1.5; for N=5, offset=2, etc.
         offset = (self.N - 1) / 2.0
 
-        # The step is how far apart each piece is placed. You've been using 1.1.
-        step = 1.1
+        # The step is how far apart each piece is placed. You've been using step_size.
+        step = STEP_SIZE
 
         # Threshold to decide if a coordinate is "close enough" to the outer layer
         threshold = 0.05
@@ -96,12 +96,12 @@ class CubePiece:
         forward = glm.normalize(glm.vec3(self.transform[2][0], self.transform[2][1], self.transform[2][2]))
 
         # Check face alignment using dot products
-        if abs(pos[0] - 1.1) < 0.1: self.faces.append('R')
-        if abs(pos[0] + 1.1) < 0.1: self.faces.append('L')
-        if abs(pos[1] - 1.1) < 0.1: self.faces.append('U')
-        if abs(pos[1] + 1.1) < 0.1: self.faces.append('D')
-        if abs(pos[2] - 1.1) < 0.1: self.faces.append('F')
-        if abs(pos[2] + 1.1) < 0.1: self.faces.append('B')
+        if abs(pos[0] - STEP_SIZE) < 0.1: self.faces.append('R')
+        if abs(pos[0] + STEP_SIZE) < 0.1: self.faces.append('L')
+        if abs(pos[1] - STEP_SIZE) < 0.1: self.faces.append('U')
+        if abs(pos[1] + STEP_SIZE) < 0.1: self.faces.append('D')
+        if abs(pos[2] - STEP_SIZE) < 0.1: self.faces.append('F')
+        if abs(pos[2] + STEP_SIZE) < 0.1: self.faces.append('B')
 
 class RubiksCubeState:
     def __init__(self, N=3):
@@ -112,7 +112,7 @@ class RubiksCubeState:
     def _initialize_pieces(self):
         """
         For an NxN cube, we'll create N^3 pieces, each offset by (x - offset),
-        (y - offset), (z - offset) in steps of 1.1 (or whatever your gap is).
+        (y - offset), (z - offset) in steps of step_size (or whatever your gap is).
         """
         index = 0
         offset = (self.N - 1) / 2.0  # For 3x3, offset=1; for 4x4, offset=1.5, etc.
@@ -121,9 +121,9 @@ class RubiksCubeState:
             for y in range(self.N):
                 for z in range(self.N):
                     # Compute actual position in 3D
-                    px = (x - offset) * 1.1
-                    py = (y - offset) * 1.1
-                    pz = (z - offset) * 1.1
+                    px = (x - offset) * STEP_SIZE
+                    py = (y - offset) * STEP_SIZE
+                    pz = (z - offset) * STEP_SIZE
                     position = [px, py, pz]
 
                     # Create a piece
@@ -187,12 +187,12 @@ class RubiksCubeController:
         }
 
         self.face_coordinates = {
-            'R': (0, +offset*1.1),  # x = +offset*1.1
-            'L': (0, -offset*1.1),  # x = -offset*1.1
-            'U': (1, +offset*1.1),  # y = +offset*1.1
-            'D': (1, -offset*1.1),  # y = -offset*1.1
-            'F': (2, +offset*1.1),  # z = +offset*1.1
-            'B': (2, -offset*1.1),  # z = -offset*1.1
+            'R': (0, +offset*STEP_SIZE),  # x = +offset*step_size
+            'L': (0, -offset*STEP_SIZE),  # x = -offset*step_size
+            'U': (1, +offset*STEP_SIZE),  # y = +offset*step_size
+            'D': (1, -offset*STEP_SIZE),  # y = -offset*step_size
+            'F': (2, +offset*STEP_SIZE),  # z = +offset*step_size
+            'B': (2, -offset*STEP_SIZE),  # z = -offset*step_size
         }
 
     def toggle_direction(self):

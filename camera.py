@@ -1,6 +1,6 @@
 import glm
 import glfw
-import math
+from const import N, STEP_SIZE
 
 class Camera:
     """
@@ -23,7 +23,7 @@ class Camera:
 
         # Center of rotation (can be moved with arrow keys)
         self.center = glm.vec3(0.0, 0.0, 0.0)
-        self.step_size = 1.1  # Same as cube piece spacing
+        self.step_size = STEP_SIZE  # Same as cube piece spacing
 
         # For panning in the XY plane
         self.panX = 0.0
@@ -94,8 +94,7 @@ class Camera:
             self.center.z += direction * self.step_size
 
         # Keep the center within the bounds of the cube
-        step = 1.1  # Same as the cube piece spacing
-        max_offset = ((N - 1) / 2.0) * step
+        max_offset = ((N - 1) / 2.0) * self.step_size
         self.center.x = max(min(self.center.x, max_offset), -max_offset)
         self.center.y = max(min(self.center.y, max_offset), -max_offset)
         self.center.z = max(min(self.center.z, max_offset), -max_offset)

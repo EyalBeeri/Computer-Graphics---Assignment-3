@@ -6,9 +6,7 @@ from PIL import Image
 import glm
 from camera import Camera
 from rubiks_cube_state import RubiksCubeController
-
-N = 3
-
+from const import N
 class RubiksCube:
     def __init__(self, width=800, height=600, N=3):
         self.N = N
