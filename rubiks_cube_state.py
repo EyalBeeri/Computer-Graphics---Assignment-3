@@ -1,10 +1,6 @@
 import math
-
 import numpy as np
 import glm
-from math import radians
-
-import pyglm
 
 
 class CubePiece:
@@ -12,8 +8,7 @@ class CubePiece:
         self.initial_position = position.copy()
         self.index = index
         self.N = N  # Store N so we know how big the cube is
-        self.transform = glm.mat4(1.0)
-        self.transform = glm.translate(self.transform, glm.vec3(*position))
+        self.transform = glm.translate(glm.mat4(1.0), glm.vec3(*position))
         self.faces = self._determine_faces()
 
     def apply_rotation(self, rotation_matrix):
@@ -247,7 +242,7 @@ class RubiksCubeController:
         return False  # Block rotation for other faces
 
     def rotate_face(self, face):
-        """Execute a 90-degree rotation of the specified face"""
+        """Execute a rotation of the specified face"""
         print(f"\n=== Starting rotation of face {face} ===")
         print("Before rotation:")
         self.debug_print_face(face)

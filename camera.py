@@ -4,7 +4,7 @@ import math
 
 class Camera:
     """
-    Camera with perspective, rotating around the origin (Rubik's center).
+    Camera with perspective, rotating around a configurable center point.
     Handles input for rotation (via mouse), zoom (scroll), and panning (right drag).
     """
     def __init__(self, width, height):
@@ -16,10 +16,14 @@ class Camera:
         self.near = 0.1
         self.far = 100.0
 
-        # Position on a sphere, looking at the origin
+        # Position on a sphere, looking at a configurable center
         self.radius = 8.0
         self.yaw = 0.0
         self.pitch = 0.0
+
+        # Center of rotation (can be moved with arrow keys)
+        self.center = glm.vec3(0.0, 0.0, 0.0)
+        self.step_size = 1.1  # Same as cube piece spacing
 
         # For panning in the XY plane
         self.panX = 0.0
@@ -45,7 +49,7 @@ class Camera:
         z = self.radius * glm.cos(pitch_rad) * glm.cos(yaw_rad)
 
         eye = glm.vec3(x + self.panX, y + self.panY, z)
-        center = glm.vec3(self.panX, self.panY, 0.0)
+        center = self.center  # Use the configurable center
         up = glm.vec3(0.0, 1.0, 0.0)
         return glm.lookAt(eye, center, up)
 
@@ -75,3 +79,23 @@ class Camera:
             self.radius = 2.0
         if self.radius > 40.0:
             self.radius = 40.0
+            
+    def move_center(self, direction, axis, N):
+        """
+        Move the center of rotation along the specified axis.
+        direction: 1 or -1
+        axis: 'x', 'y', or 'z'
+        """
+        if axis == 'x':
+            self.center.x += direction * self.step_size
+        elif axis == 'y':
+            self.center.y += direction * self.step_size
+        elif axis == 'z':
+            self.center.z += direction * self.step_size
+
+        # Keep the center within the bounds of the cube
+        step = 1.1  # Same as the cube piece spacing
+        max_offset = ((N - 1) / 2.0) * step
+        self.center.x = max(min(self.center.x, max_offset), -max_offset)
+        self.center.y = max(min(self.center.y, max_offset), -max_offset)
+        self.center.z = max(min(self.center.z, max_offset), -max_offset)

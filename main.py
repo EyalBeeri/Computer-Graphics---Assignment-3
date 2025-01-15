@@ -7,6 +7,7 @@ import glm
 from camera import Camera
 from rubiks_cube_state import RubiksCubeController
 
+N = 3
 
 class RubiksCube:
     def __init__(self, width=800, height=600, N=3):
@@ -191,7 +192,7 @@ def main():
 
     glfw.make_context_current(window)
 
-    cube = RubiksCube(width=800, height=600, N=5)
+    cube = RubiksCube(width=800, height=600, N=N)
     cube.init_gl()
 
     def mouse_callback(window, xpos, ypos):
@@ -360,6 +361,18 @@ def main():
                 cube.cube_controller.process_keyboard('A')
             elif key == glfw.KEY_Z:
                 cube.cube_controller.process_keyboard('Z')
+            elif key == glfw.KEY_RIGHT:
+                cube.camera.move_center(-1, 'x', N)  # Move center right
+            elif key == glfw.KEY_LEFT:
+                cube.camera.move_center(1, 'x', N)  # Move center left
+            elif key == glfw.KEY_UP:
+                cube.camera.move_center(-1, 'y', N)  # Move center up
+            elif key == glfw.KEY_DOWN:
+                cube.camera.move_center(1, 'y', N)  # Move center down
+            elif key == glfw.KEY_I:
+                cube.camera.move_center(-1, 'z', N)  # Move center in
+            elif key == glfw.KEY_O:
+                cube.camera.move_center(1, 'z', N)  # Move center out
 
     glfw.set_cursor_pos_callback(window, mouse_callback)
     glfw.set_scroll_callback(window, scroll_callback)
