@@ -385,6 +385,8 @@ def main():
 	glClearColor(0.2, 0.3, 0.3, 1.0)
 
 	while not glfw.window_should_close(window):
+		cube.cube_controller.update_animation()
+
 		cube.draw()
 		glfw.swap_buffers(window)
 		glfw.poll_events()

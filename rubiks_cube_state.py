@@ -187,10 +187,131 @@ class RubiksCubeController:
             'F': (2, +self.offset*STEP_SIZE),  # z = +offset*step_size
             'B': (2, -self.offset*STEP_SIZE),  # z = -offset*step_size
         }
+
+        self.is_animating = False
+        self.animation_progress = 0.0
+        self.animation_speed = 0.05
+        self.current_rotation_face = None
+        self.pieces_to_animate = []
+        self.rotation_axis = None
+        self.target_angle = 0
+        self.rotation_center = None
+        self.animation_direction = 1
+        # Add storage for initial transforms
+        self.initial_transforms = {}
         
         # Initialize face_coordinates based on current center
         self.update_face_coordinates()
-        
+
+    def start_face_rotation(self, face):
+        """Initialize the rotation animation for a face"""
+        if self.is_animating:
+            return False
+
+        if not self.can_rotate_face(face):
+            print("Cannot rotate face due to blocking")
+            return False
+
+        self.pieces_to_animate = self.get_face_pieces(face)
+        self.current_rotation_face = face
+        self.is_animating = True
+        self.animation_progress = 0.0
+        self.animation_direction = self.direction
+
+        # Store initial transforms by creating new matrices
+        self.initial_transforms = {
+            piece_idx: glm.mat4(glm.mat4x4(self.state.pieces[piece_idx].transform))
+            for piece_idx in self.pieces_to_animate
+        }
+
+        # Set rotation axis
+        self.rotation_axis = self.face_rotations[face]
+
+        # Set target angle based on current angle setting
+        self.target_angle = self.angle
+
+        # Calculate rotation center
+        self.rotation_center = glm.vec3(0.0)
+        if face in ['R', 'L']:
+            self.rotation_center.x = self.face_coordinates[face][1]
+        elif face in ['U', 'D']:
+            self.rotation_center.y = self.face_coordinates[face][1]
+        elif face in ['F', 'B']:
+            self.rotation_center.z = self.face_coordinates[face][1]
+
+        print(f"Starting rotation of {face} face")
+        print(f"Target angle: {self.target_angle}")
+        print(f"Direction: {self.animation_direction}")
+
+        return True
+
+    def update_animation(self):
+        """Update the animation progress and apply rotation"""
+        if not self.is_animating:
+            return
+
+        # Increment animation progress
+        self.animation_progress += self.animation_speed
+
+        if self.animation_progress >= 1.0:
+            self._finish_animation()
+            return
+
+        # Calculate current angle for this frame
+        current_angle = self.target_angle * self.animation_progress * -self.animation_direction
+
+        # Create the rotation transformation
+        rotation_mat = glm.mat4(1.0)
+        # First translate to origin
+        rotation_mat = glm.translate(rotation_mat, -self.rotation_center)
+        # Apply rotation
+        rotation_mat = glm.rotate(rotation_mat, glm.radians(current_angle), self.rotation_axis)
+        # Translate back
+        rotation_mat = glm.translate(rotation_mat, self.rotation_center)
+
+        # Apply the current rotation to each piece
+        for piece_index in self.pieces_to_animate:
+            piece = self.state.pieces[piece_index]
+            # Start from the initial transform and apply new rotation
+            piece.transform = rotation_mat * self.initial_transforms[piece_index]
+
+    def _finish_animation(self):
+        """Clean up after animation is complete"""
+        # Ensure final rotation is exactly at target angle
+        final_angle = self.target_angle * -self.animation_direction
+
+        # Create final rotation matrix
+        final_rotation = glm.mat4(1.0)
+        final_rotation = glm.translate(final_rotation, -self.rotation_center)
+        final_rotation = glm.rotate(final_rotation, glm.radians(final_angle), self.rotation_axis)
+        final_rotation = glm.translate(final_rotation, self.rotation_center)
+
+        # Apply final rotation to pieces
+        for piece_index in self.pieces_to_animate:
+            piece = self.state.pieces[piece_index]
+            piece.transform = final_rotation * self.initial_transforms[piece_index]
+
+        self.is_animating = False
+        self.animation_progress = 0.0
+
+        # Update faces for rotated pieces
+        for piece_index in self.pieces_to_animate:
+            self.state.pieces[piece_index].update_faces()
+
+        # Handle half-rotation state
+        if self.angle == 45:
+            if self.current_rotation_face in self.half_rotated_faces:
+                self.half_rotated_faces.remove(self.current_rotation_face)
+            else:
+                self.half_rotated_faces.append(self.current_rotation_face)
+
+        # Reset animation state
+        self.pieces_to_animate = []
+        self.current_rotation_face = None
+        self.rotation_axis = None
+        self.rotation_center = None
+        self.initial_transforms.clear()
+
     def shift_center(self, axis, direction):
         """
         Shift the center of rotation along specified axis.
@@ -274,68 +395,8 @@ class RubiksCubeController:
         return False  # Block rotation for other faces
 
     def rotate_face(self, face):
-        """Execute a rotation of the specified face"""
-        print(f"\n=== Starting rotation of face {face} ===")
-        print("Before rotation:")
-        self.debug_print_face(face)
-
-        # Get pieces to rotate
-        pieces_to_rotate = self.get_face_pieces(face)
-        curr_direction = self.direction
-        curr_angle = self.angle
-        if not self.can_rotate_face(face):
-            print("Cannot rotate face due to blocking")
-            return
-        # Get rotation axis and direction
-        axis = self.face_rotations[face]
-        angle = curr_angle * -curr_direction
-
-        # Create rotation matrix
-        rotation_center = glm.vec3(0.0)
-        if face in ['R', 'L']:
-            rotation_center.x = self.face_coordinates[face][1]
-        elif face in ['U', 'D']:
-            rotation_center.y = self.face_coordinates[face][1]
-        elif face in ['F', 'B']:
-            rotation_center.z = self.face_coordinates[face][1]
-
-        # Create the rotation transformation
-        rotation_mat = glm.mat4(1.0)
-        # First translate to origin
-        rotation_mat = glm.translate(rotation_mat, -rotation_center)
-        # Apply rotation
-        rotation_mat = glm.rotate(rotation_mat, glm.radians(angle), axis)
-        # Translate back
-        rotation_mat = glm.translate(rotation_mat, rotation_center)
-
-        print(f"\nApplying {angle}° rotation around axis {axis.x}, {axis.y}, {axis.z}")
-
-        # Apply rotation to each piece
-        for piece_index in pieces_to_rotate:
-            piece = self.state.pieces[piece_index]
-            print(f"\nRotating piece {piece_index}:")
-            print(f"  Before: pos={[f'{x:.2f}' for x in piece.current_position]}")
-
-            # Apply the new rotation
-            piece.transform = rotation_mat * piece.transform
-
-            print(f"  After:  pos={[f'{x:.2f}' for x in piece.current_position]}")
-
-        print("\nAfter rotation:")
-        self.debug_print_face(face)
-        print("=== Rotation complete ===\n")
-
-        # Update faces for rotated pieces
-        for piece_index in pieces_to_rotate:
-            self.state.pieces[piece_index].update_faces()
-
-        if curr_angle == 45:
-            if face in self.half_rotated_faces:
-                self.half_rotated_faces.remove(face)
-            else:
-                self.half_rotated_faces.append(face)
-
-        return True
+        """Modified to use animation system"""
+        return self.start_face_rotation(face)
 
     def get_face_pieces(self, face):
         """Get all pieces that belong to the specified face"""
