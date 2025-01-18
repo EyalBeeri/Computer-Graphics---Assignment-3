@@ -183,7 +183,7 @@ class RubiksCube:
 def main():
     if not glfw.init():
         return
-
+    # Just to commit, delete later
     window = glfw.create_window(800, 600, "Rubik's Cube", None, None)
     if not window:
         glfw.terminate()
