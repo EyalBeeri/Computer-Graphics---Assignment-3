@@ -158,42 +158,74 @@ class RubiksCubeController:
     def __init__(self, N=3):
         self.state = RubiksCubeState(N=N)
         self.N = N
-        offset = (N - 1) / 2.0
-        # Add rotation angle state
+        self.offset = (N - 1) / 2.0
         self.direction = 1
         self.angle = 90
-        self.half_rotated_faces= []
-
-        # Update face rotations dictionary to use the current_rotation_angle
+        self.half_rotated_faces = []
+        
+        # Add center shift tracking
+        self.center_shift = {'x': 0, 'y': 0, 'z': 0}  # Tracks shifts on each axis
+        
+        # Update face rotations with axis information
         self.face_rotations = {
-            'R': glm.vec3(1, 0, 0),  # Right face rotates around x-axis
-            'L': glm.vec3(1, 0, 0),  # Left face rotates around x-axis
-            'U': glm.vec3(0, 1, 0),  # Up face rotates around y-axis
-            'D': glm.vec3(0, 1, 0),  # Down face rotates around y-axis
-            'F': glm.vec3(0, 0, 1),  # Front face rotates around z-axis
-            'B': glm.vec3(0, 0, 1),  # Back face rotates around z-axis
-            'A': 180,  # 180-degree rotation
-            'Z': 45  # 45-degree rotation
-        }
-
-        # Rest of the initialization remains the same
-        self.rotation_axes = {
             'R': glm.vec3(1, 0, 0),
             'L': glm.vec3(1, 0, 0),
             'U': glm.vec3(0, 1, 0),
             'D': glm.vec3(0, 1, 0),
             'F': glm.vec3(0, 0, 1),
-            'B': glm.vec3(0, 0, 1)
+            'B': glm.vec3(0, 0, 1),
+            'A': 180,
+            'Z': 45
         }
 
-        self.face_coordinates = {
-            'R': (0, +offset*STEP_SIZE),  # x = +offset*step_size
-            'L': (0, -offset*STEP_SIZE),  # x = -offset*step_size
-            'U': (1, +offset*STEP_SIZE),  # y = +offset*step_size
-            'D': (1, -offset*STEP_SIZE),  # y = -offset*step_size
-            'F': (2, +offset*STEP_SIZE),  # z = +offset*step_size
-            'B': (2, -offset*STEP_SIZE),  # z = -offset*step_size
+        # Base coordinates for faces (will be adjusted based on center shift)
+        self.base_face_coordinates = {
+            'R': (0, +self.offset*STEP_SIZE),  # x = +offset*step_size
+            'L': (0, -self.offset*STEP_SIZE),  # x = -offset*step_size
+            'U': (1, +self.offset*STEP_SIZE),  # y = +offset*step_size
+            'D': (1, -self.offset*STEP_SIZE),  # y = -offset*step_size
+            'F': (2, +self.offset*STEP_SIZE),  # z = +offset*step_size
+            'B': (2, -self.offset*STEP_SIZE),  # z = -offset*step_size
         }
+        
+        # Initialize face_coordinates based on current center
+        self.update_face_coordinates()
+        
+    def shift_center(self, axis, direction):
+        """
+        Shift the center of rotation along specified axis.
+        axis: 'x', 'y', or 'z'
+        direction: 1 or -1
+        """
+        # Check if the new position would be within bounds
+        new_shift = self.center_shift[axis] + direction
+        if -self.offset <= new_shift <= self.offset:
+            self.center_shift[axis] = new_shift
+            self.update_face_coordinates()
+            print(f"Center shifted on {axis} axis to {self.center_shift[axis]}")
+            return True
+        return False
+    
+    def update_face_coordinates(self):
+        """Update face coordinates based on current center shift"""
+        step = STEP_SIZE  # The spacing between pieces
+        
+        # Create new face coordinates dictionary
+        self.face_coordinates = {}
+        
+        # Adjust each face's position based on center shift
+        for face, (axis, value) in self.base_face_coordinates.items():
+            new_value = value
+            
+            # Adjust the coordinate based on center shift
+            if axis == 0:  # X-axis faces (R/L)
+                new_value = value - (self.center_shift['x'] * step)
+            elif axis == 1:  # Y-axis faces (U/D)
+                new_value = value - (self.center_shift['y'] * step)
+            elif axis == 2:  # Z-axis faces (F/B)
+                new_value = value - (self.center_shift['z'] * step)
+                
+            self.face_coordinates[face] = (axis, new_value)
 
     def toggle_direction(self):
         if self.direction == 1:
@@ -337,13 +369,26 @@ class RubiksCubeController:
         ])
 
     def process_keyboard(self, key):
-        """Process keyboard input for face rotations"""
+        """Process keyboard input for face rotations and center shifts"""
         face_keys = {'R': 'R', 'L': 'L', 'U': 'U', 'D': 'D', 'F': 'F', 'B': 'B'}
-
-        if key == 'SPACE':
+        
+        # Handle center shift controls
+        if key == 'RIGHT':
+            return self.shift_center('x', -1)
+        elif key == 'LEFT':
+            return self.shift_center('x', 1)
+        elif key == 'UP':
+            return self.shift_center('y', -1)
+        elif key == 'DOWN':
+            return self.shift_center('y', 1)
+        elif key == 'I':
+            return self.shift_center('z', -1)
+        elif key == 'O':
+            return self.shift_center('z', 1)
+        # Handle rotation direction toggle
+        elif key == 'SPACE':
             self.toggle_direction()
-
-
+        # Handle rotation angle changes
         elif key == 'A':
             if self.angle == 45:
                 self.angle = 90
@@ -351,7 +396,6 @@ class RubiksCubeController:
                 self.angle = 180
             elif self.angle == 180:
                 return
-
         elif key == 'Z':
             if self.angle == 45:
                 return
@@ -359,10 +403,10 @@ class RubiksCubeController:
                 self.angle = 45
             elif self.angle == 180:
                 self.angle = 90
-
+        # Handle face rotations
         elif key in face_keys:
             print(f"\n=== Processing keyboard input: {key} ===")
-            self.last_face = face_keys[key]  # Store the last face rotated
+            self.last_face = face_keys[key]
             result = self.rotate_face(face_keys[key])
             print(f"=== Keyboard processing complete: {key} ===\n")
             return result
