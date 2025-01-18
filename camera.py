@@ -1,40 +1,30 @@
 import glm
 import glfw
-from const import N, STEP_SIZE
 
 class Camera:
-    """
-    Camera with perspective, rotating around the origin (Rubik's center).
-    Handles input for rotation (via mouse), zoom (scroll), and panning (right drag).
-    """
     def __init__(self, width, height):
         self.width = width
         self.height = height
 
-        # Perspective attributes
         self.fov = 45.0
         self.near = 0.1
         self.far = 100.0
 
-        # Position on a sphere, looking at the origin
         self.radius = 8.0
         self.yaw = 0.0
         self.pitch = 0.0
 
-        # For panning in the XY plane
         self.panX = 0.0
         self.panY = 0.0
 
-        # For storing last mouse position
         self.last_mouse_x = 0.0
         self.last_mouse_y = 0.0
 
     def get_view_matrix(self):
-        # Convert yaw/pitch/radius to cartesian
-        yaw_rad   = glm.radians(self.yaw)
+        yaw_rad = glm.radians(self.yaw)
         pitch_rad = glm.radians(self.pitch)
 
-        # Limit pitch so you don't go upside down
+        # Limit pitch so we don't go upside down
         if self.pitch > 89.9:  
             self.pitch = 89.9
         if self.pitch < -89.9:
@@ -69,7 +59,6 @@ class Camera:
             self.panY -= dy * 0.01
 
     def process_scroll(self, yoffset):
-        # Zoom in/out by changing radius
         self.radius -= yoffset
         if self.radius < 2.0:
             self.radius = 2.0

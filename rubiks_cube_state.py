@@ -1,4 +1,3 @@
-import math
 import numpy as np
 import glm
 from const import STEP_SIZE
@@ -7,62 +6,37 @@ class CubePiece:
     def __init__(self, position, index, N=3):
         self.initial_position = position.copy()
         self.index = index
-        self.N = N  # Store N so we know how big the cube is
+        self.N = N
         self.transform = glm.translate(glm.mat4(1.0), glm.vec3(*position))
         self.faces = self._determine_faces()
 
     def apply_rotation(self, rotation_matrix):
-        # Compose the new rotation with existing transform
         self.transform = rotation_matrix * self.transform
 
     @property
     def current_position(self):
-        """Extract position from transformation matrix"""
         return [
             self.transform[3][0],
             self.transform[3][1],
             self.transform[3][2]
         ]
 
-    def get_orientation(self):
-        """Extract Euler angles (in radians) from the transformation matrix in XYZ order."""
-        rotation_matrix = glm.mat3(self.transform)  # Extract the 3x3 rotation matrix
-        sy = math.sqrt(rotation_matrix[0][0] ** 2 + rotation_matrix[1][0] ** 2)
-        singular = sy < 1e-6  # Check for gimbal lock
-
-        if not singular:
-            x = math.atan2(rotation_matrix[2][1], rotation_matrix[2][2])
-            y = math.atan2(-rotation_matrix[2][0], sy)
-            z = math.atan2(rotation_matrix[1][0], rotation_matrix[0][0])
-        else:
-            # Handle gimbal lock: only two angles are independent
-            x = math.atan2(-rotation_matrix[1][2], rotation_matrix[1][1])
-            y = math.atan2(-rotation_matrix[2][0], sy)
-            z = 0  # Arbitrarily set to zero
-
-        return x, y, z  # Returns Euler angles in radians
-
     def _determine_faces(self):
         """
-        For an N×N cube, compute which outer faces this piece belongs to.
-        For example, for a 3×3 cube, the outer layers have coordinates ±(step_size).
-        For a 4×4 cube, ±(1.5*step_size), etc.
+        For an N×N cube, compute which outer faces this piece belongs to
         """
         faces = []
-        # The offset is how many steps you go from 0 to reach the outermost layer.
-        # For N=3, offset=1; for N=4, offset=1.5; for N=5, offset=2, etc.
+        # The offset is how many steps you go from 0 to reach the outermost layer
         offset = (self.N - 1) / 2.0
 
-        # The step is how far apart each piece is placed. You've been using step_size.
+        # How far apart each piece is placed
         step = STEP_SIZE
 
         # Threshold to decide if a coordinate is "close enough" to the outer layer
         threshold = 0.05
 
-        # Current piece position in (x, y, z)
         x, y, z = self.initial_position
 
-        # Compare each coordinate with ±(offset * step)
         # Right
         if abs(x - ( offset * step )) < threshold:
             faces.append('R')
@@ -87,13 +61,7 @@ class CubePiece:
     def update_faces(self):
         """Recalculate face membership based on transformed position and orientation"""
         self.faces = []
-        # Extract position from transform
         pos = self.current_position
-
-        # Get the transformed basis vectors
-        right = glm.normalize(glm.vec3(self.transform[0][0], self.transform[0][1], self.transform[0][2]))
-        up = glm.normalize(glm.vec3(self.transform[1][0], self.transform[1][1], self.transform[1][2]))
-        forward = glm.normalize(glm.vec3(self.transform[2][0], self.transform[2][1], self.transform[2][2]))
 
         # Check face alignment using dot products
         if abs(pos[0] - STEP_SIZE) < 0.1: self.faces.append('R')
@@ -110,23 +78,17 @@ class RubiksCubeState:
         self._initialize_pieces()
 
     def _initialize_pieces(self):
-        """
-        For an NxN cube, we'll create N^3 pieces, each offset by (x - offset),
-        (y - offset), (z - offset) in steps of step_size (or whatever your gap is).
-        """
         index = 0
-        offset = (self.N - 1) / 2.0  # For 3x3, offset=1; for 4x4, offset=1.5, etc.
+        offset = (self.N - 1) / 2.0
 
         for x in range(self.N):
             for y in range(self.N):
                 for z in range(self.N):
-                    # Compute actual position in 3D
                     px = (x - offset) * STEP_SIZE
                     py = (y - offset) * STEP_SIZE
                     pz = (z - offset) * STEP_SIZE
                     position = [px, py, pz]
 
-                    # Create a piece
                     self.pieces[index] = CubePiece(position, index)
                     index += 1
 
@@ -141,11 +103,9 @@ class RubiksCubeState:
 
 
     def update_piece_position(self, index, new_position):
-        """Update the position of a specific piece"""
         self.pieces[index].current_position = new_position
 
     def update_piece_rotation(self, index, rotation_delta):
-        """Update the rotation of a specific piece"""
         piece = self.pieces[index]
         piece.rotation = [
             (piece.rotation[0] + rotation_delta[0]) % 360,
@@ -163,10 +123,8 @@ class RubiksCubeController:
         self.angle = 90
         self.half_rotated_faces = []
         
-        # Add center shift tracking
-        self.center_shift = {'x': 0, 'y': 0, 'z': 0}  # Tracks shifts on each axis
+        self.center_shift = {'x': 0, 'y': 0, 'z': 0}
         
-        # Update face rotations with axis information
         self.face_rotations = {
             'R': glm.vec3(1, 0, 0),
             'L': glm.vec3(1, 0, 0),
@@ -180,12 +138,12 @@ class RubiksCubeController:
 
         # Base coordinates for faces (will be adjusted based on center shift)
         self.base_face_coordinates = {
-            'R': (0, +self.offset*STEP_SIZE),  # x = +offset*step_size
-            'L': (0, -self.offset*STEP_SIZE),  # x = -offset*step_size
-            'U': (1, +self.offset*STEP_SIZE),  # y = +offset*step_size
-            'D': (1, -self.offset*STEP_SIZE),  # y = -offset*step_size
-            'F': (2, +self.offset*STEP_SIZE),  # z = +offset*step_size
-            'B': (2, -self.offset*STEP_SIZE),  # z = -offset*step_size
+            'R': (0, +self.offset*STEP_SIZE),
+            'L': (0, -self.offset*STEP_SIZE),
+            'U': (1, +self.offset*STEP_SIZE),
+            'D': (1, -self.offset*STEP_SIZE),
+            'F': (2, +self.offset*STEP_SIZE),
+            'B': (2, -self.offset*STEP_SIZE),
         }
 
         self.is_animating = False
@@ -197,14 +155,12 @@ class RubiksCubeController:
         self.target_angle = 0
         self.rotation_center = None
         self.animation_direction = 1
-        # Add storage for initial transforms
         self.initial_transforms = {}
         
         # Initialize face_coordinates based on current center
         self.update_face_coordinates()
 
     def start_face_rotation(self, face):
-        """Initialize the rotation animation for a face"""
         if self.is_animating:
             return False
 
@@ -218,16 +174,13 @@ class RubiksCubeController:
         self.animation_progress = 0.0
         self.animation_direction = self.direction
 
-        # Store initial transforms by creating new matrices
         self.initial_transforms = {
             piece_idx: glm.mat4(glm.mat4x4(self.state.pieces[piece_idx].transform))
             for piece_idx in self.pieces_to_animate
         }
 
-        # Set rotation axis
         self.rotation_axis = self.face_rotations[face]
 
-        # Set target angle based on current angle setting
         self.target_angle = self.angle
 
         # Calculate rotation center
@@ -246,47 +199,34 @@ class RubiksCubeController:
         return True
 
     def update_animation(self):
-        """Update the animation progress and apply rotation"""
         if not self.is_animating:
             return
 
-        # Increment animation progress
         self.animation_progress += self.animation_speed
 
         if self.animation_progress >= 1.0:
             self._finish_animation()
             return
 
-        # Calculate current angle for this frame
         current_angle = self.target_angle * self.animation_progress * -self.animation_direction
 
-        # Create the rotation transformation
         rotation_mat = glm.mat4(1.0)
-        # First translate to origin
         rotation_mat = glm.translate(rotation_mat, -self.rotation_center)
-        # Apply rotation
         rotation_mat = glm.rotate(rotation_mat, glm.radians(current_angle), self.rotation_axis)
-        # Translate back
         rotation_mat = glm.translate(rotation_mat, self.rotation_center)
 
-        # Apply the current rotation to each piece
         for piece_index in self.pieces_to_animate:
             piece = self.state.pieces[piece_index]
-            # Start from the initial transform and apply new rotation
             piece.transform = rotation_mat * self.initial_transforms[piece_index]
 
     def _finish_animation(self):
-        """Clean up after animation is complete"""
-        # Ensure final rotation is exactly at target angle
         final_angle = self.target_angle * -self.animation_direction
 
-        # Create final rotation matrix
         final_rotation = glm.mat4(1.0)
         final_rotation = glm.translate(final_rotation, -self.rotation_center)
         final_rotation = glm.rotate(final_rotation, glm.radians(final_angle), self.rotation_axis)
         final_rotation = glm.translate(final_rotation, self.rotation_center)
 
-        # Apply final rotation to pieces
         for piece_index in self.pieces_to_animate:
             piece = self.state.pieces[piece_index]
             piece.transform = final_rotation * self.initial_transforms[piece_index]
@@ -294,11 +234,9 @@ class RubiksCubeController:
         self.is_animating = False
         self.animation_progress = 0.0
 
-        # Update faces for rotated pieces
         for piece_index in self.pieces_to_animate:
             self.state.pieces[piece_index].update_faces()
 
-        # Handle half-rotation state
         if self.angle == 45:
             if self.current_rotation_face in self.half_rotated_faces:
                 self.half_rotated_faces.remove(self.current_rotation_face)
@@ -313,11 +251,6 @@ class RubiksCubeController:
         self.initial_transforms.clear()
 
     def shift_center(self, axis, direction):
-        """
-        Shift the center of rotation along specified axis.
-        axis: 'x', 'y', or 'z'
-        direction: 1 or -1
-        """
         # Check if the new position would be within bounds
         new_shift = self.center_shift[axis] + direction
         if -self.offset <= new_shift <= self.offset:
@@ -328,17 +261,13 @@ class RubiksCubeController:
         return False
     
     def update_face_coordinates(self):
-        """Update face coordinates based on current center shift"""
-        step = STEP_SIZE  # The spacing between pieces
+        step = STEP_SIZE
         
-        # Create new face coordinates dictionary
         self.face_coordinates = {}
         
-        # Adjust each face's position based on center shift
         for face, (axis, value) in self.base_face_coordinates.items():
             new_value = value
             
-            # Adjust the coordinate based on center shift
             if axis == 0:  # X-axis faces (R/L)
                 new_value = value - (self.center_shift['x'] * step)
             elif axis == 1:  # Y-axis faces (U/D)
@@ -354,27 +283,21 @@ class RubiksCubeController:
         else:
             self.direction = 1
     def debug_print_piece(self, piece_index, prefix=""):
-        """Helper method to print detailed piece information"""
         piece = self.state.pieces[piece_index]
-        orientation = piece.get_orientation()
         print(f"{prefix}Piece {piece_index}:")
         print(f"  Position: [{piece.current_position[0]:.2f}, {piece.current_position[1]:.2f}, {piece.current_position[2]:.2f}]")
-        print(f"  Rotation: [{glm.degrees(orientation[0]):.2f}, {glm.degrees(orientation[1]):.2f}, {glm.degrees(orientation[2]):.2f}]")
         print(f"  Faces: {piece.faces}")
 
     def debug_print_face(self, face):
-        """Print all pieces in a face"""
         pieces = self.get_face_pieces(face)
         print(f"\nFace {face} contains {len(pieces)} pieces:")
         for piece_index in pieces:
             self.debug_print_piece(piece_index, "  ")
 
     def can_rotate_face(self, face):
-        """Check if the given face can be rotated based on current half-rotated state."""
         if not self.half_rotated_faces:
-            return True  # No restrictions if no face is half-rotated
+            return True
 
-        # If the requested face is already half-rotated, allow rotation
         if face in self.half_rotated_faces:
             return True
 
@@ -392,14 +315,12 @@ class RubiksCubeController:
         if 'B' in self.half_rotated_faces and face == 'F':
             return True
 
-        return False  # Block rotation for other faces
+        return False
 
     def rotate_face(self, face):
-        """Modified to use animation system"""
         return self.start_face_rotation(face)
 
     def get_face_pieces(self, face):
-        """Get all pieces that belong to the specified face"""
         axis_index, value = self.face_coordinates[face]
         pieces = []
 
@@ -417,7 +338,6 @@ class RubiksCubeController:
         return pieces
 
     def _create_rotation_matrix(self, axis, angle):
-        """Create a 3D rotation matrix for the given axis and angle"""
         x, y, z = axis
         c = np.cos(angle)
         s = np.sin(angle)
@@ -430,7 +350,6 @@ class RubiksCubeController:
         ])
 
     def process_keyboard(self, key):
-        """Process keyboard input for face rotations and center shifts"""
         face_keys = {'R': 'R', 'L': 'L', 'U': 'U', 'D': 'D', 'F': 'F', 'B': 'B'}
         
         # Handle center shift controls
