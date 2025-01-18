@@ -191,7 +191,7 @@ def main():
 
     glfw.make_context_current(window)
 
-    cube = RubiksCube(width=800, height=600, N=5)
+    cube = RubiksCube(width=800, height=600, N=3)
     cube.init_gl()
 
     def mouse_callback(window, xpos, ypos):
@@ -261,9 +261,9 @@ def main():
 
             # Done picking => turn off picking mode in the shader
             glUniform1i(glGetUniformLocation(cube.shader, "u_PickingMode"), 0)
-            
+
     def cursor_pos_callback(window, xpos, ypos):
-		# If no piece selected, do normal camera controls or nothing
+        # If no piece selected, do normal camera controls or nothing
         if cube.selected_cube_id < 0:
             # Maybe your existing camera logic
             cube.camera.process_mouse_motion(window, xpos, ypos)
@@ -271,14 +271,7 @@ def main():
 
         # If right button is pressed => translate
         if glfw.get_mouse_button(window, glfw.MOUSE_BUTTON_RIGHT) == glfw.PRESS:
-            # We want the piece to remain under the mouse.
-            # We can "unproject" (xpos, ypos, selected_depth) from screen to world space.
-
             real_y = cube.camera.height - int(ypos) - 1
-            # Read depth? We already have the depth in self.selected_depth if we assume the piece's depth 
-            # doesn't change. But if the user wants continuous re-check, you can do another glReadPixels.
-
-            # Or just use the stored selected_depth
             ndc_x = (2.0 * xpos) / cube.camera.width - 1.0
             ndc_y = (2.0 * real_y) / cube.camera.height - 1.0
             ndc_z = 2.0 * cube.selected_depth - 1.0
@@ -288,39 +281,49 @@ def main():
             world_coords = inv_mvp * clip_coords
             world_coords /= world_coords.w
 
-            # Now we have the "world space" position that is under the mouse.
-            # Move the center of the cube to that position (or do relative deltas).
             if cube.selected_cube_id != 50:
                 piece = cube.cube_controller.state.pieces[cube.selected_cube_id]
-                # We'll do a quick hack: place the piece's transform so its origin is at that world_coords
-                # Possibly you'd track an offset so the cube doesn't jump.
-                # For a simple approach, just do:
-                piece_center_local = glm.vec3( piece.current_position )
+                piece_center_local = glm.vec3(piece.current_position)
                 new_center = glm.vec3(world_coords.x, world_coords.y, world_coords.z)
                 translation_delta = new_center - piece_center_local
-
-                # Update transform
                 piece.transform = glm.translate(piece.transform, translation_delta)
 
-        # If left button is pressed => rotate (e.g. around camera’s up or something)
+        # If left button is pressed => rotate around local axes
         elif glfw.get_mouse_button(window, glfw.MOUSE_BUTTON_LEFT) == glfw.PRESS:
-            # Suppose you do a simple rotation around the camera’s up vector or something
-            dx = xpos - cube.camera.last_mouse_x
-            # negative = clockwise vs. counterclockwise, up to you
-            angle = dx * 0.01  # tune the factor
-            rotation_axis = glm.vec3(0,1,0)  # or incorporate camera orientation
-            rotation_mat = glm.rotate(glm.mat4(1.0), angle, rotation_axis)
-
             if cube.selected_cube_id != 50:
                 piece = cube.cube_controller.state.pieces[cube.selected_cube_id]
-                # apply rotation around piece center
-                # 1) translate to origin
-                center = glm.vec3(piece.current_position)
-                piece.transform = glm.translate(piece.transform, -center)
-                # 2) rotate
-                piece.transform = rotation_mat * piece.transform
-                # 3) translate back
-                piece.transform = glm.translate(piece.transform, center)
+
+                # Calculate mouse movement
+                dx = xpos - cube.camera.last_mouse_x
+                dy = ypos - cube.camera.last_mouse_y
+
+                # Get camera vectors
+                view_matrix = cube.camera.get_view_matrix()
+                camera_right = glm.normalize(glm.vec3(view_matrix[0][0], view_matrix[1][0], view_matrix[2][0]))
+                camera_up = glm.normalize(glm.vec3(view_matrix[0][1], view_matrix[1][1], view_matrix[2][1]))
+
+                # Create rotation matrices for both X and Y mouse movement
+                rotation_x = glm.rotate(glm.mat4(1.0), glm.radians(-dy * 2.0), camera_right)
+                rotation_y = glm.rotate(glm.mat4(1.0), glm.radians(-dx * 2.0), camera_up)
+
+                # Combine rotations
+                total_rotation = rotation_y * rotation_x
+
+                # Get piece's center in world space
+                piece_center = glm.vec3(piece.current_position)
+
+                # Create the complete transformation:
+                # 1. Translate to origin
+                translate_to_origin = glm.translate(glm.mat4(1.0), -piece_center)
+                # 2. Apply rotation
+                # 3. Translate back
+                translate_back = glm.translate(glm.mat4(1.0), piece_center)
+
+                # Combine all transformations
+                final_transform = translate_back * total_rotation * translate_to_origin
+
+                # Apply the transformation
+                piece.transform = final_transform * piece.transform
 
         # Update last mouse pos
         cube.camera.last_mouse_x = xpos
