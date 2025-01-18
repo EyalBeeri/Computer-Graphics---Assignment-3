@@ -191,7 +191,7 @@ def main():
 
     glfw.make_context_current(window)
 
-    cube = RubiksCube(width=800, height=600, N=3)
+    cube = RubiksCube(width=800, height=600, N=5)
     cube.init_gl()
 
     def mouse_callback(window, xpos, ypos):
@@ -373,6 +373,8 @@ def main():
     glClearColor(0.2, 0.3, 0.3, 1.0)
 
     while not glfw.window_should_close(window):
+        cube.cube_controller.update_animation()
+
         cube.draw()
         glfw.swap_buffers(window)
         glfw.poll_events()
